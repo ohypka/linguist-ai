@@ -1,0 +1,105 @@
+# Health check
+
+GET http://127.0.0.1:8000/health
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/lessons/generate
+Content-Type: application/json
+
+{
+  "topic": "Travel at the airport",
+  "proficiency_level": "b1",
+  "difficult_expressions": ["boarding pass", "carry-on luggage"]
+}
+
+###
+
+GET http://127.0.0.1:8000/lessons
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/lessons/lesson-demo-001/feedback
+Content-Type: application/json
+
+{
+  "user_text": "I think airports should improve check-in flow because queues are too long."
+}
+
+###
+
+POST http://127.0.0.1:8000/scenarios/start
+Content-Type: application/json
+
+{
+  "scenario": "airport check-in",
+  "difficult_expressions": ["boarding pass", "window seat"],
+  "required_vocabulary": ["gate", "security check", "window seat"]
+}
+
+###
+
+GET http://127.0.0.1:8000/scenarios
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/scenarios/sim-demo-001/turn
+Content-Type: application/json
+
+{
+  "user_message": "I need help at the check-in desk.",
+  "ask_for_hint": true,
+  "stop_requested": false,
+  "llm_decides_end": false
+}
+
+###
+
+POST http://127.0.0.1:8000/scenarios/sim-demo-001/turn
+Content-Type: application/json
+
+{
+  "user_message": "Thanks, that's all for now.",
+  "stop_requested": true,
+  "llm_decides_end": false
+}
+
+###
+
+POST http://127.0.0.1:8000/hints
+Content-Type: application/json
+
+{
+  "context": "I want to explain a delay at the airport.",
+  "user_message": "My flight late because traffic.",
+  "target_expression": "due to"
+}
+
+###
+
+POST http://127.0.0.1:8000/audio/analyze
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="expected_expressions"
+
+boarding pass,window seat
+--WebAppBoundary
+Content-Disposition: form-data; name="scenario"
+
+airport check-in
+--WebAppBoundary
+Content-Disposition: form-data; name="audio_file"; filename="sample.wav"
+Content-Type: audio/wav
+
+< ./sample.wav
+--WebAppBoundary--
+
+###
+
+GET http://127.0.0.1:8000/docs
+Accept: application/json
+
