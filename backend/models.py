@@ -37,43 +37,6 @@ class LessonListItem(BaseModel):
     proficiency_level: str
 
 
-class ScenarioStartRequest(BaseModel):
-    scenario: str
-    difficult_expressions: list[str] = Field(default_factory=list)
-    required_vocabulary: list[str] = Field(default_factory=list)
-
-
-class ScenarioStartResponse(BaseModel):
-    scenario_id: str
-    scenario: str
-    opening_line: str
-    prioritized_expressions: list[str]
-
-
-class ScenarioListItem(BaseModel):
-    scenario_id: str
-    scenario: str
-    turn: int
-    finished: bool
-
-
-class ScenarioTurnRequest(BaseModel):
-    user_message: str = Field(min_length=1)
-    ask_for_hint: bool = False
-    stop_requested: bool = False
-    llm_decides_end: bool = False
-
-
-class ScenarioTurnResponse(BaseModel):
-    scenario_id: str
-    ai_message: str
-    used_expression: Optional[str] = None
-    is_finished: bool
-    finished_reason: Optional[str] = None
-    feedback: Optional[str] = None
-    hint: Optional[str] = None
-
-
 class HintRequest(BaseModel):
     context: str = Field(min_length=5)
     user_message: str = Field(min_length=1)
@@ -85,6 +48,32 @@ class HintResponse(BaseModel):
     corrected_example: str
 
 
+class ForbiddenWordsStartRequest(BaseModel):
+    topic: str = "general"
+
+
+class ForbiddenWordsStartResponse(BaseModel):
+    game_id: str
+    topic: str
+    target_word: str
+    forbidden_words: list[str]
+    prompt: str
+    status: str = "ready"
+
+
+class ForbiddenWordsEvaluateRequest(BaseModel):
+    game_id: str
+    user_text: Optional[str] = None
+    fallback_text: Optional[str] = None
+
+
+class ForbiddenWordsEvaluateResponse(BaseModel):
+    round_success: bool
+    confidence: int
+    feedback: str
+    status: str
+
+
 class AudioAnalyzeResponse(BaseModel):
     file_name: str
     content_type: Optional[str]
@@ -93,3 +82,27 @@ class AudioAnalyzeResponse(BaseModel):
     vocabulary_fit_score: int
     detected_expected_expressions: list[str]
     feedback: str
+
+class CardRequest(BaseModel):
+    topic: str = "General English"
+    card_count: int = 10
+
+class Card(BaseModel):
+    id: int
+    text: str
+    is_correct: bool
+    explanation: str
+
+class AnswerDetail(BaseModel):
+    card_id: int
+    text: str
+    user_was_right: bool
+
+class ScoreRequest(BaseModel):
+    user_id: str
+    answers: list[AnswerDetail]
+
+class ScoreResponse(BaseModel):
+    status: str
+    accuracy: float
+    llm_feedback: str
