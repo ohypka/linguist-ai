@@ -5,6 +5,25 @@ Accept: application/json
 
 ###
 
+POST http://127.0.0.1:8000/forbidden-words/start
+Content-Type: application/json
+
+{
+  "topic": "travel"
+}
+
+###
+
+POST http://127.0.0.1:8000/forbidden-words/evaluate
+Content-Type: application/json
+
+{
+  "game_id": "replace-with-game-id-from-start",
+  "user_text": "It is a place where you wait before your flight and check in your luggage."
+}
+
+###
+
 POST http://127.0.0.1:8000/lessons/generate
 Content-Type: application/json
 
@@ -28,44 +47,6 @@ Content-Type: application/json
   "user_text": "I think airports should improve check-in flow because queues are too long."
 }
 
-###
-
-POST http://127.0.0.1:8000/scenarios/start
-Content-Type: application/json
-
-{
-  "scenario": "airport check-in",
-  "difficult_expressions": ["boarding pass", "window seat"],
-  "required_vocabulary": ["gate", "security check", "window seat"]
-}
-
-###
-
-GET http://127.0.0.1:8000/scenarios
-Accept: application/json
-
-###
-
-POST http://127.0.0.1:8000/scenarios/sim-demo-001/turn
-Content-Type: application/json
-
-{
-  "user_message": "I need help at the check-in desk.",
-  "ask_for_hint": true,
-  "stop_requested": false,
-  "llm_decides_end": false
-}
-
-###
-
-POST http://127.0.0.1:8000/scenarios/sim-demo-001/turn
-Content-Type: application/json
-
-{
-  "user_message": "Thanks, that's all for now.",
-  "stop_requested": true,
-  "llm_decides_end": false
-}
 
 ###
 
