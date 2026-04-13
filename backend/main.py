@@ -20,6 +20,11 @@ class ForbiddenWordsState(TypedDict):
     finished: bool
 
 
+class QuickReactionsState(BaseModel):
+    current_prompt: str
+    history: list[QuickReactionsRound] = Field(default_factory=list)
+
+
 app = FastAPI(
     title="Linguist AI Backend",
     description="API for Linguist AI mobile app.",
@@ -36,8 +41,9 @@ app.add_middleware(
 
 lesson_store: dict[str, LessonState] = {}
 forbidden_words_store: dict[str, ForbiddenWordsState] = {}
+quick_reactions_store: dict[str, QuickReactionsState] = {}
 
-FORBIDDEN_WORDS_POOL: dict[str, list[dict[str, object]]] = {
+FORBIDDEN_WORDS_POOL: dict[str, list[dict[str, list[object] | str]]] = {
     "general": [
         {
             "target_word": "library",
@@ -85,10 +91,24 @@ FORBIDDEN_WORDS_POOL: dict[str, list[dict[str, object]]] = {
 }
 
 
-def _pick_forbidden_words_entry(topic: str) -> dict[str, object]:
+def _pick_forbidden_words_entry(topic: str) -> dict[str, list[object] | str]:
     normalized_topic = topic.lower().strip() or "general"
     candidates = FORBIDDEN_WORDS_POOL.get(normalized_topic, FORBIDDEN_WORDS_POOL["general"])
     return random.choice(candidates)
+
+
+QUICK_REACTIONS_POOL: list[str] = [
+    "Excuse me, you just stepped on my invisible dog!",
+    "Why are you wearing pajamas to a business meeting?",
+    "I think your socks don't match, and it's bothering everyone.",
+    "Did you know that penguins have knees?",
+    "I just heard you got rejected by three places today.",
+    "Your laugh sounds like a broken printer.",
+]
+
+
+def _pick_quick_reactions_prompt() -> str:
+    return random.choice(QUICK_REACTIONS_POOL)
 
 
 @app.get("/health")
@@ -265,7 +285,7 @@ async def audio_analyze(
     )
 
 
-@app.post("/cards", response_model=list[Card])
+@app.post("/cards/start", response_model=list[Card])
 async def generate_deck(request: CardRequest):
     mock_sentences = [
         {"text": "She don't like apples.", "is_correct": False,
@@ -319,4 +339,86 @@ async def submit_score(score: ScoreRequest):
         status="success",
         accuracy=round(accuracy, 2),
         llm_feedback=mock_llm_response
+    )
+
+
+def _get_game(game_id: str) -> QuickReactionsState:
+    game = quick_reactions_store.get(game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Quick reactions game not found")
+    return game
+
+
+@app.post("/quick-reactions/start", response_model=QuickReactionsStartResponse)
+async def quick_reactions_start(payload: QuickReactionsStartRequest) -> QuickReactionsStartResponse:
+    game_id = str(uuid4())
+    prompt = _pick_quick_reactions_prompt()
+
+    quick_reactions_store[game_id] = QuickReactionsState(current_prompt=prompt)
+
+    return QuickReactionsStartResponse(
+        game_id=game_id,
+        prompt=prompt,
+    )
+
+
+@app.post("/quick-reactions/evaluate", response_model=QuickReactionsEvaluateResponse)
+async def quick_reactions_evaluate(
+        payload: QuickReactionsEvaluateRequest,
+) -> QuickReactionsEvaluateResponse:
+    game = _get_game(payload.game_id)
+
+    used_text = (payload.user_text or payload.fallback_text or "").strip()
+    if not used_text:
+        raise HTTPException(status_code=400, detail="user_text or fallback_text is required")
+
+    round_success = random.random() > 0.5
+
+    feedback = (
+        "Great riposte! Your response was witty and appropriate." if round_success else
+        "Your response was okay, but could be better. Try to be quicker and more clever!"
+    )
+
+    game.history.append(QuickReactionsRound(
+        prompt=game.current_prompt,
+        user_response=used_text,
+        success=round_success,
+    ))
+
+    game.current_prompt = _pick_quick_reactions_prompt()
+
+    return QuickReactionsEvaluateResponse(
+        round_success=round_success,
+        feedback=feedback,
+        status="success",
+        next_prompt=game.current_prompt,
+    )
+
+
+@app.post("/quick-reactions/end", response_model=QuickReactionsEndResponse)
+async def quick_reactions_end(payload: QuickReactionsEndRequest) -> QuickReactionsEndResponse:
+    game = quick_reactions_store.pop(payload.game_id, None)
+
+    if game is None:
+        raise HTTPException(status_code=404, detail="Quick reactions game not found")
+
+    rounds_played = len(game.history)
+    success_count = sum(1 for round_item in game.history if round_item.success)
+
+    if rounds_played == 0:
+        final_feedback = "No rounds played yet. Start a round to get feedback on your quick reactions."
+    else:
+        success_rate = success_count / rounds_played
+        if success_rate >= 0.8:
+            final_feedback = f"Excellent work: you handled {success_count} of {rounds_played} rounds well. Your responses were quick, witty, and natural."
+        elif success_rate >= 0.5:
+            final_feedback = f"Good job overall: {success_count} of {rounds_played} rounds were strong. Keep the replies concise and aim for a slightly sharper punchline."
+        else:
+            final_feedback = f"You completed {rounds_played} rounds, but only {success_count} were successful. Try shorter, faster, and more direct replies next time."
+
+    return QuickReactionsEndResponse(
+        game_id=payload.game_id,
+        status="success",
+        rounds_played=rounds_played,
+        final_feedback=final_feedback,
     )

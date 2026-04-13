@@ -106,3 +106,42 @@ class ScoreResponse(BaseModel):
     status: str
     accuracy: float
     llm_feedback: str
+
+
+class QuickReactionsStartRequest(BaseModel):
+    pass
+
+
+class QuickReactionsStartResponse(BaseModel):
+    game_id: str
+    prompt: str
+
+
+class QuickReactionsEvaluateRequest(BaseModel):
+    game_id: str
+    user_text: Optional[str] = None
+    fallback_text: Optional[str] = None
+
+
+class QuickReactionsRound(BaseModel):
+    prompt: str
+    user_response: str
+    success: bool
+
+
+class QuickReactionsEndRequest(BaseModel):
+    game_id: str
+
+
+class QuickReactionsEndResponse(BaseModel):
+    game_id: str
+    status: str
+    rounds_played: int
+    final_feedback: str
+
+
+class QuickReactionsEvaluateResponse(BaseModel):
+    round_success: bool
+    feedback: str
+    status: str
+    next_prompt: str
