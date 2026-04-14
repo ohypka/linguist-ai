@@ -12,13 +12,17 @@ Content-Type: application/json
   "topic": "travel"
 }
 
+> {%
+ client.global.set("game_id", response.body.game_id)
+ %}
+
 ###
 
 POST http://127.0.0.1:8000/forbidden-words/evaluate
 Content-Type: application/json
 
 {
-  "game_id": "replace-with-game-id-from-start",
+  "game_id": "{{game_id}}",
   "user_text": "It is a place where you wait before your flight and check in your luggage."
 }
 
