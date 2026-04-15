@@ -312,9 +312,12 @@ async def generate_deck(request: CardRequest):
          "explanation": "Poprawne użycie czasu Past Simple."},
     ]
 
+    sentences = llm_service.generate_deck(count=request.card_count, topic=request.topic)
+
     deck = []
     for i in range(request.card_count):
-        sentence = random.choice(mock_sentences)
+        sentence = random.choice(sentences)
+        sentences.remove(sentence)
         deck.append(
             Card(
                 id=i + 1,

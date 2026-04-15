@@ -35,7 +35,39 @@ def forbidden_words(description : str):
     confidence = int(a["confidence"])
     return word, confidence
 
+def generate_deck(count : int, topic : str):
+    system_prompt=(
+        "Jesteś doświadczonym lektorem języka angielskiego, który pomaga polskim uczniom w nauce, wyłapując i tłumacząc typowe błędy gramatyczne, leksykalne oraz kalki językowe."
+        "Twoim zadaniem jest wygenerowanie listy zdań w języku angielskim o zróżnicowanym poziomie trudności. "
+        "Połowa zdań powinna być w 100% poprawna, a druga połowa powinna zawierać jeden, powszechny błąd."
+        "Upewnij się o absolutnej poprawności wyjaśnień."
+        "Wynik musisz zwrócić WYŁĄCZNIE w formacie JSON, jako listę obiektów. "
+        "Nie dodawaj absolutnie żadnego tekstu, powitań ani komentarzy poza samym kodem JSON. "
+        "Każdy obiekt musi mieć dokładnie taką strukturę:"
+        "{"
+        "\"text\": \"[Tutaj zdanie po angielsku]\","
+        "\"is_correct\": [true lub false],"
+        "\"explanation\": \"[Zwięzłe, edukacyjne wyjaśnienie po polsku, wskazujące na konkretną regułę gramatyczną lub poprawne użycie]\""
+        "}"
+        "Oto przykłady oczekiwanego formatu i stylu:"
+        "["
+        "{\"text\": \"She don't like apples.\", \"is_correct\": false, \"explanation\": \"Powinno być 'doesn't', ponieważ 'she' to trzecia osoba liczby pojedynczej.\"},"
+        "{\"text\": \"I have been working here for 5 years.\", \"is_correct\": true, \"explanation\": \"Poprawne użycie Present Perfect Continuous.\"},"
+        "{\"text\": \"Let's discuss about the project.\", \"is_correct\": false, \"explanation\": \"Czasownik 'discuss' nie wymaga przyimka 'about'.\"}"
+        "]"
+    )
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Wygeneruj '{count}' nowych, unikalnych przykładów w ramach tematu '{topic}'."},
+        ]
+    )
+
+    a = json.loads(response.choices[0].message.content)
+    return a
+
 if __name__ == "__main__":
-    description = "A person who shares knowledge in an education facility for young people, also grades them."
-    w, c = forbidden_words(description)
-    print(w + ", " + str(c))
+    f = generate_deck(10, "General English")
+    print(f)
