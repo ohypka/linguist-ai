@@ -1,3 +1,4 @@
+import json
 import random
 from uuid import uuid4
 from typing import TypedDict
@@ -5,6 +6,7 @@ from typing import TypedDict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+import llm_service
 from models import *
 
 
@@ -226,17 +228,27 @@ async def forbidden_words_evaluate(
 
     target_word = game["target_word"]
 
-    allowed = random.random() < 0.5
+    allowed = len(matched_forbidden_words)==0
+
+    guessed_word, confidence = llm_service.forbidden_words(description=used_text)
 
     if allowed:
-        confidence = random.randint(65, 100)
-        feedback = (
-            f"LLM odgadł słowo '{target_word}'. Opis był zrozumiały i nie zawierał zakazanych słów."
-        )
+        if guessed_word==target_word:
+            if confidence>=65:
+                feedback = (
+                    f"LLM odgadł słowo '{target_word}'. Opis był zrozumiały i nie zawierał zakazanych słów."
+                )
+            else:
+                feedback = (
+                    f"LLM odgadł słowo '{target_word}', ale nie był pewny. Popracuj nad jakością opisu. Nie wykryto zakazanych słów."
+                )
+        else:
+            feedback = (
+                f"LLM nie odgadł słowa '{target_word}'. Zamiast tego, odpowiedział '{guessed_word}'. Popracuj nad jakością opisu. Nie wykryto zakazanych słów."
+            )
     else:
-        confidence = random.randint(1, 64)
         feedback = (
-            "LLM miał wystarczająco dużo sygnałów, ale wykryto zakazane słowa: "
+            "Wykryto zakazane słowa: "
             f"{', '.join(matched_forbidden_words)}."
         )
 
@@ -244,7 +256,7 @@ async def forbidden_words_evaluate(
     forbidden_words_store[payload.game_id] = game
 
     return ForbiddenWordsEvaluateResponse(
-        round_success=confidence > 64,
+        round_success=confidence > 64 and allowed and guessed_word==target_word,
         confidence=confidence,
         feedback=feedback,
         status="success",
@@ -300,9 +312,12 @@ async def generate_deck(request: CardRequest):
          "explanation": "Poprawne użycie czasu Past Simple."},
     ]
 
+    sentences = llm_service.generate_deck(count=request.card_count, topic=request.topic)
+
     deck = []
     for i in range(request.card_count):
-        sentence = random.choice(mock_sentences)
+        sentence = random.choice(sentences)
+        sentences.remove(sentence)
         deck.append(
             Card(
                 id=i + 1,
