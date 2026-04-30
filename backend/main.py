@@ -1,12 +1,17 @@
 import random
 from uuid import uuid4
-from typing import TypedDict
+from typing import TypedDict, cast
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 import llm_service
+from database import get_db, init_db
+from db_models import LeaderboardRecord, UserRecord
 from models import *
 
 
@@ -42,10 +47,17 @@ class LeaderboardEntry(BaseModel):
     game_type: str
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="Linguist AI Backend",
     description="API for Linguist AI mobile app.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -59,32 +71,57 @@ app.add_middleware(
 forbidden_words_store: dict[str, ForbiddenWordsState] = {}
 quick_reactions_store: dict[str, QuickReactionsState] = {}
 
-user_store: dict[str, UserProfile] = {}
-leaderboard_store: list[LeaderboardEntry] = []
-
 
 class GuestAuthRequest(BaseModel):
     device_id: str
     name: str
 
 
+def _to_user_profile(user: UserRecord) -> UserProfile:
+    return UserProfile(
+        id=user.id,
+        name=user.name,
+        is_guest=user.is_guest,
+        email=user.email,
+        password_hash=user.password_hash,
+    )
+
+
+def _to_leaderboard_entry(entry: LeaderboardRecord) -> LeaderboardEntry:
+    return LeaderboardEntry(
+        user_id=entry.user_id,
+        nickname=entry.nickname,
+        score=entry.score,
+        game_type=entry.game_type,
+    )
+
+
 @app.post("/auth/guest")
-async def authenticate_guest(payload: GuestAuthRequest):
-    if payload.device_id in user_store:
-        user_store[payload.device_id].name = payload.name
+async def authenticate_guest(payload: GuestAuthRequest, db: Session = Depends(get_db)):
+    user = cast(UserRecord | None, cast(object, db.get(UserRecord, payload.device_id)))
+    if user:
+        user.name = payload.name
     else:
-        user_store[payload.device_id] = UserProfile(
+        user = UserRecord(
             id=payload.device_id,
-            name=payload.name
+            name=payload.name,
+            is_guest=True,
         )
-    return {"status": "success", "user": user_store[payload.device_id]}
+        db.add(user)
+    db.commit()
+    db.refresh(user)
+    assert user is not None
+    return {"status": "success", "user": _to_user_profile(user)}
 
 
-async def get_current_user(x_player_id: str = Header(..., alias="X-Player-ID")) -> UserProfile:
-    user = user_store.get(x_player_id)
+async def get_current_user(
+    x_player_id: str = Header(..., alias="X-Player-ID"),
+    db: Session = Depends(get_db)
+) -> UserProfile:
+    user = cast(UserRecord | None, cast(object, db.get(UserRecord, x_player_id)))
     if not user:
         raise HTTPException(status_code=401, detail="Unknown device. Register as a guest.")
-    return user
+    return _to_user_profile(user)
 
 
 FORBIDDEN_WORDS_POOL: dict[str, list[dict[str, list[object] | str]]] = {
@@ -188,7 +225,8 @@ async def forbidden_words_start(payload: ForbiddenWordsStartRequest) -> Forbidde
 @app.post("/forbidden-words/evaluate", response_model=ForbiddenWordsEvaluateResponse)
 async def forbidden_words_evaluate(
         payload: ForbiddenWordsEvaluateRequest,
-        current_user: UserProfile = Depends(get_current_user)
+        current_user: UserProfile = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ) -> ForbiddenWordsEvaluateResponse:
     game = forbidden_words_store.get(payload.game_id)
     if game is None:
@@ -209,12 +247,13 @@ async def forbidden_words_evaluate(
 
     guessed_word, confidence = llm_service.forbidden_words(description=used_text)
 
-    leaderboard_store.append(LeaderboardEntry(
+    db.add(LeaderboardRecord(
         user_id=current_user.id,
         nickname=current_user.name,
         score=confidence,
         game_type="forbidden_words"
     ))
+    db.commit()
 
     if allowed:
         if guessed_word == target_word:
@@ -282,7 +321,8 @@ async def generate_deck(request: CardRequest):
 @app.post("/cards/score", response_model=ScoreResponse)
 async def submit_score(
         score: ScoreRequest,
-        current_user: UserProfile = Depends(get_current_user)
+        current_user: UserProfile = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ):
     total_cards = len(score.answers)
 
@@ -292,12 +332,13 @@ async def submit_score(
     correct_answers = sum(1 for ans in score.answers if ans.user_was_right)
     accuracy = (correct_answers / total_cards) * 100
 
-    leaderboard_store.append(LeaderboardEntry(
+    db.add(LeaderboardRecord(
         user_id=current_user.id,
         nickname=current_user.name,
         score=int(accuracy),
         game_type="cards"
     ))
+    db.commit()
 
     mistakes = [ans.text for ans in score.answers if not ans.user_was_right]
     successes = [ans.text for ans in score.answers if ans.user_was_right]
@@ -372,7 +413,8 @@ async def quick_reactions_evaluate(
 @app.post("/quick-reactions/end", response_model=QuickReactionsEndResponse)
 async def quick_reactions_end(
         payload: QuickReactionsEndRequest,
-        current_user: UserProfile = Depends(get_current_user)
+        current_user: UserProfile = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ) -> QuickReactionsEndResponse:
     game = quick_reactions_store.pop(payload.game_id, None)
 
@@ -384,12 +426,13 @@ async def quick_reactions_end(
 
     if success_count > 0:
         points_earned = success_count
-        leaderboard_store.append(LeaderboardEntry(
+        db.add(LeaderboardRecord(
             user_id=current_user.id,
             nickname=current_user.name,
             score=points_earned,
             game_type="quick_reactions"
         ))
+        db.commit()
 
     if rounds_played == 0:
         final_feedback = "No rounds played yet. Start a round to get feedback on your quick reactions."
@@ -413,9 +456,15 @@ async def quick_reactions_end(
 @app.get("/leaderboard")
 async def get_leaderboard(
         game_type: str = "cards",
-        limit: int = 10
+        limit: int = 10,
+        db: Session = Depends(get_db)
 ):
-    filtered_scores = [entry for entry in leaderboard_store if entry.game_type == game_type]
-    filtered_scores.sort(key=lambda x: x.score, reverse=True)
+    stmt = (
+        select(LeaderboardRecord)
+        .where(LeaderboardRecord.game_type == game_type)
+        .order_by(LeaderboardRecord.score.desc())
+        .limit(limit)
+    )
+    entries = db.scalars(stmt).all()
 
-    return filtered_scores[:limit]
+    return [_to_leaderboard_entry(entry) for entry in entries]
