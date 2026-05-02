@@ -315,9 +315,8 @@ async def generate_deck(request: CardRequest):
     sentences = llm_service.generate_deck(count=request.card_count, topic=request.topic)
 
     deck = []
-    for i in range(request.card_count):
-        sentence = random.choice(sentences)
-        sentences.remove(sentence)
+    for i in range(len(sentences)):
+        sentence = sentences[i]
         deck.append(
             Card(
                 id=i + 1,

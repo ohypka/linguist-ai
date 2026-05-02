@@ -39,7 +39,8 @@ def generate_deck(count : int, topic : str):
     system_prompt=(
         "Jesteś doświadczonym lektorem języka angielskiego, który pomaga polskim uczniom w nauce, wyłapując i tłumacząc typowe błędy gramatyczne, leksykalne oraz kalki językowe."
         "Twoim zadaniem jest wygenerowanie listy zdań w języku angielskim o zróżnicowanym poziomie trudności. "
-        "Połowa zdań powinna być w 100% poprawna, a druga połowa powinna zawierać jeden, powszechny błąd."
+        "Część zdań powinna być w 100% poprawna, druga część powinna zawierać jeden błąd, którego powszechność niech będzie uzależniona od poziomu trudności zdania."
+        "Upewnij się, obie części nie są równomiernie reprezentowane, ale mniejsza stanowi przynajmniej 20% całości."
         "Upewnij się o absolutnej poprawności wyjaśnień."
         "Wynik musisz zwrócić WYŁĄCZNIE w formacie JSON, jako listę obiektów. "
         "Nie dodawaj absolutnie żadnego tekstu, powitań ani komentarzy poza samym kodem JSON. "
