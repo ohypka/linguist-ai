@@ -1,17 +1,33 @@
-# linguist_ai
+# Linguist AI Frontend
 
-A new Flutter project.
+## Quick start (local)
 
-## Getting Started
+```powershell
+flutter pub get
+flutter run
+```
 
-This project is a starting point for a Flutter application.
+## Configuration
 
-A few resources to get you started if this is your first Flutter project:
+Backend must be running locally:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```
+http://127.0.0.1:8000
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Android emulator uses:
+
+```
+http://10.0.2.2:8000
+```
+
+## Project structure
+
+```
+lib/
+├── core/
+├── models/
+├── services/
+├── screens/
+├── widgets/
+```
