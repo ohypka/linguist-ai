@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import '../../services/api_service.dart';
 
 class TinderScreen extends StatefulWidget {
   const TinderScreen({super.key});
@@ -9,53 +9,52 @@ class TinderScreen extends StatefulWidget {
 }
 
 class _TinderScreenState extends State<TinderScreen> {
-  final List<Map<String, dynamic>> cards = [
-    {
-      "sentence": "She go to school every day",
-      "is_correct": false,
-      "explanation": "Should be: 'She goes' (3rd person singular)"
-    },
-    {
-      "sentence": "I have finished my homework",
-      "is_correct": true,
-      "explanation": "Correct use of Present Perfect"
-    },
-    {
-      "sentence": "He don’t like coffee",
-      "is_correct": false,
-      "explanation": "Should be: 'He doesn't like coffee'"
-    },
-    {
-      "sentence": "They were playing football yesterday",
-      "is_correct": true,
-      "explanation": "Correct Past Continuous"
-    },
-    {
-      "sentence": "I am agree with you",
-      "is_correct": false,
-      "explanation": "Should be: 'I agree with you'"
-    },
-  ];
+  List<dynamic> cards = [];
+
+  bool isLoading = true;
 
   int index = 0;
   int correct = 0;
 
   double positionX = 0;
   double positionY = 0;
-  double angle = 0; // rotation based on horizontal drag
+  double angle = 0;
 
   bool showCorrectOverlay = false;
+  bool showWrongOverlay = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadCards();
+  }
+
+  Future<void> loadCards() async {
+    try {
+      final response = await ApiService.startCards("travel");
+
+      setState(() {
+        cards = response;
+        isLoading = false;
+      });
+    } catch (e) {
+      print(e);
+
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
 
   void resetPosition() {
     positionX = 0;
     positionY = 0;
-    angle = 0; // reset after swipe or restart
+    angle = 0;
   }
 
   void handleAnswer(bool userChoice) async {
     final card = cards[index];
     final isCorrect = card["is_correct"];
-    final explanation = card["explanation"];
 
     bool userWasCorrect = isCorrect == userChoice;
 
@@ -63,48 +62,42 @@ class _TinderScreenState extends State<TinderScreen> {
       correct++;
 
       setState(() {
-        showCorrectOverlay = true; // show quick success feedback
+        showCorrectOverlay = true;
       });
 
-      await Future.delayed(const Duration(milliseconds: 700));
+      await Future.delayed(
+        const Duration(milliseconds: 500),
+      );
 
       setState(() {
         showCorrectOverlay = false;
       });
-
-      nextCard();
     } else {
-      // show explanation only on wrong answer
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Wrong!!!"),
-          content: Text(
-            explanation,
-            style: const TextStyle(fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Next"),
-            )
-          ],
-        ),
+      setState(() {
+        showWrongOverlay = true;
+      });
+
+      await Future.delayed(
+        const Duration(milliseconds: 500),
       );
 
-      nextCard();
+      setState(() {
+        showWrongOverlay = false;
+      });
     }
+
+    nextCard();
   }
 
   void nextCard() {
     if (index < cards.length - 1) {
       setState(() {
         index++;
-        resetPosition(); // important: avoid tilted next card
+        resetPosition();
       });
     } else {
-      final accuracy = (correct / cards.length * 100).toStringAsFixed(0);
+      final accuracy =
+      (correct / cards.length * 100).toStringAsFixed(0);
 
       showDialog(
         context: context,
@@ -115,11 +108,15 @@ class _TinderScreenState extends State<TinderScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
+
                 setState(() {
                   index = 0;
                   correct = 0;
-                  resetPosition(); // important on restart
+                  resetPosition();
+                  isLoading = true;
                 });
+
+                loadCards();
               },
               child: const Text("Restart"),
             )
@@ -133,25 +130,40 @@ class _TinderScreenState extends State<TinderScreen> {
     setState(() {
       positionX += details.delta.dx;
       positionY += details.delta.dy;
-      angle = positionX / 300; // small tilt effect
+      angle = positionX / 300;
     });
   }
 
   void onDragEnd(DragEndDetails details) {
-    // threshold to decide swipe direction
     if (positionX > 120) {
       handleAnswer(true);
     } else if (positionX < -120) {
       handleAnswer(false);
     } else {
       setState(() {
-        resetPosition(); // snap back if not far enough
+        resetPosition();
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (cards.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: Text("No cards available"),
+        ),
+      );
+    }
+
     final card = cards[index];
 
     return Scaffold(
@@ -172,17 +184,22 @@ class _TinderScreenState extends State<TinderScreen> {
                     child: Stack(
                       children: [
                         Container(
-                          width: MediaQuery.of(context).size.width * 0.85,
-                          height: MediaQuery.of(context).size.height * 0.6,
+                          width:
+                          MediaQuery.of(context).size.width *
+                              0.85,
+                          height:
+                          MediaQuery.of(context).size.height *
+                              0.6,
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [
                                 Color(0xFF1E293B),
-                                Color(0xFF0F172A)
+                                Color(0xFF0F172A),
                               ],
                             ),
-                            borderRadius: BorderRadius.circular(30),
+                            borderRadius:
+                            BorderRadius.circular(30),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.6),
@@ -192,27 +209,68 @@ class _TinderScreenState extends State<TinderScreen> {
                           ),
                           child: Center(
                             child: Text(
-                              card["sentence"],
-                              style: const TextStyle(fontSize: 24),
+                              card["text"],
+                              style: const TextStyle(
+                                fontSize: 24,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           ),
                         ),
 
-                        // overlay shown only for correct answers
+                        // correct overlay
                         if (showCorrectOverlay)
                           Container(
                             width:
-                            MediaQuery.of(context).size.width * 0.85,
+                            MediaQuery.of(context)
+                                .size
+                                .width *
+                                0.85,
                             height:
-                            MediaQuery.of(context).size.height * 0.6,
+                            MediaQuery.of(context)
+                                .size
+                                .height *
+                                0.6,
                             decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.8),
-                              borderRadius: BorderRadius.circular(30),
+                              color:
+                              Colors.green.withOpacity(0.8),
+                              borderRadius:
+                              BorderRadius.circular(30),
                             ),
                             child: const Center(
-                              child: Icon(Icons.check,
-                                  size: 80, color: Colors.white),
+                              child: Icon(
+                                Icons.check,
+                                size: 80,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+
+                        // wrong overlay
+                        if (showWrongOverlay)
+                          Container(
+                            width:
+                            MediaQuery.of(context)
+                                .size
+                                .width *
+                                0.85,
+                            height:
+                            MediaQuery.of(context)
+                                .size
+                                .height *
+                                0.6,
+                            decoration: BoxDecoration(
+                              color:
+                              Colors.red.withOpacity(0.8),
+                              borderRadius:
+                              BorderRadius.circular(30),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.close,
+                                size: 80,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                       ],
@@ -226,16 +284,23 @@ class _TinderScreenState extends State<TinderScreen> {
           const SizedBox(height: 20),
 
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment:
+            MainAxisAlignment.spaceEvenly,
             children: [
               IconButton(
-                icon: const Icon(Icons.close,
-                    color: Colors.red, size: 40),
+                icon: const Icon(
+                  Icons.close,
+                  color: Colors.red,
+                  size: 40,
+                ),
                 onPressed: () => handleAnswer(false),
               ),
               IconButton(
-                icon: const Icon(Icons.check,
-                    color: Colors.green, size: 40),
+                icon: const Icon(
+                  Icons.check,
+                  color: Colors.green,
+                  size: 40,
+                ),
                 onPressed: () => handleAnswer(true),
               ),
             ],

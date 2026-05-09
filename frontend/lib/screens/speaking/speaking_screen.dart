@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../services/audio_service.dart';
-import '../../services/api_service.dart';
+import '../../services/speech_service.dart';
 
 class SpeakingScreen extends StatefulWidget {
   const SpeakingScreen({super.key});
@@ -10,40 +9,51 @@ class SpeakingScreen extends StatefulWidget {
 }
 
 class _SpeakingScreenState extends State<SpeakingScreen> {
-  final audio = AudioService();
-  bool recording = false;
-  String result = "";
-  String? path;
+  final SpeechService speechService = SpeechService();
 
-  void toggle() async {
+  bool recording = false;
+  String transcript = "";
+  String result = "";
+
+  @override
+  void initState() {
+    super.initState();
+    initSpeech();
+  }
+
+  Future<void> initSpeech() async {
+    await speechService.init();
+  }
+
+  Future<void> toggle() async {
     try {
       if (!recording) {
-        // start recording
-        path = await audio.start();
-      } else {
-        final filePath = await audio.stop();
-
-        // emulator fallback (no audio file created)
-        if (filePath == null || filePath.isEmpty) {
+        // start speech recognition
+        await speechService.startListening((text) {
           setState(() {
-            result = "⚠️ Microphone not available on emulator";
+            transcript = text;
           });
-          return;
-        }
-
-        // send recorded file to backend
-        final res = await ApiService.analyzeAudio(filePath);
+        });
 
         setState(() {
-          result = res["feedback"] ?? "No feedback"; // safe fallback
+          recording = true;
+          result = "";
+        });
+      } else {
+        // stop speech recognition
+        await speechService.stopListening();
+
+        setState(() {
+          recording = false;
+          result = transcript.isNotEmpty
+              ? "Speech recognized successfully"
+              : "No speech detected";
         });
       }
-
-      setState(() => recording = !recording);
     } catch (e) {
-      // handles recording/API errors
       setState(() {
-        result = "⚠️ Recording error (emulator limitation)";
+        recording = false;
+        result = "Speech recognition error";
       });
     }
   }
@@ -51,40 +61,102 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Speaking Mode")),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              "Describe your last vacation",
-              style: TextStyle(fontSize: 20),
-            ),
-            const SizedBox(height: 40),
-            GestureDetector(
-              onTap: toggle, // start/stop recording
-              child: Container(
-                width: 130,
-                height: 130,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blueAccent.withOpacity(0.6),
-                      blurRadius: 30,
-                      spreadRadius: 5,
-                    )
-                  ],
+      appBar: AppBar(
+        title: const Text("Speaking Mode"),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                "Describe your last vacation",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
                 ),
-                child: const Icon(Icons.mic, size: 50),
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(result), // displays API feedback or error
-          ],
+
+              const SizedBox(height: 40),
+
+              GestureDetector(
+                onTap: toggle,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 130,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: recording
+                          ? [
+                        Colors.redAccent,
+                        Colors.deepOrange,
+                      ]
+                          : [
+                        const Color(0xFF3B82F6),
+                        const Color(0xFF8B5CF6),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: recording
+                            ? Colors.redAccent.withOpacity(0.5)
+                            : Colors.blueAccent.withOpacity(0.5),
+                        blurRadius: 30,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    recording ? Icons.stop : Icons.mic,
+                    size: 50,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 30),
+
+              Text(
+                recording
+                    ? "Listening..."
+                    : "Tap the microphone to speak",
+                style: const TextStyle(fontSize: 16),
+              ),
+
+              const SizedBox(height: 30),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  transcript.isEmpty
+                      ? "Your speech transcript will appear here..."
+                      : transcript,
+                  style: const TextStyle(fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              Text(
+                result,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.greenAccent,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );

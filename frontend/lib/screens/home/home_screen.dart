@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../widgets/glass_card.dart';
 import '../games/tinder_screen.dart';
-import '../chat/chat_screen.dart';
 import '../speaking/speaking_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -57,9 +56,6 @@ class HomeScreen extends StatelessWidget {
             // main navigation options
             buildCard(context, "Grammar Cards", Icons.swipe,
                 const TinderScreen()),
-            const SizedBox(height: 16),
-            buildCard(
-                context, "Chat with AI", Icons.chat_bubble, const ChatScreen()),
             const SizedBox(height: 16),
             buildCard(
                 context, "Speaking Mode", Icons.mic, const SpeakingScreen()),
