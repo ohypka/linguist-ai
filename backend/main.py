@@ -1,12 +1,17 @@
-import json
 import random
 from uuid import uuid4
-from typing import TypedDict
+from typing import TypedDict, cast
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 import llm_service
+from database import get_db, init_db
+from db_models import LeaderboardRecord, UserRecord
 from models import *
 
 
@@ -27,10 +32,32 @@ class QuickReactionsState(BaseModel):
     history: list[QuickReactionsRound] = Field(default_factory=list)
 
 
+class UserProfile(BaseModel):
+    id: str
+    name: str
+    is_guest: bool = True
+    email: str | None = None
+    password_hash: str | None = None
+
+
+class LeaderboardEntry(BaseModel):
+    user_id: str
+    nickname: str
+    score: int
+    game_type: str
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="Linguist AI Backend",
     description="API for Linguist AI mobile app.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -41,9 +68,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-lesson_store: dict[str, LessonState] = {}
 forbidden_words_store: dict[str, ForbiddenWordsState] = {}
 quick_reactions_store: dict[str, QuickReactionsState] = {}
+
+
+class GuestAuthRequest(BaseModel):
+    device_id: str
+    name: str
+
+
+def _to_user_profile(user: UserRecord) -> UserProfile:
+    return UserProfile(
+        id=user.id,
+        name=user.name,
+        is_guest=user.is_guest,
+        email=user.email,
+        password_hash=user.password_hash,
+    )
+
+
+def _to_leaderboard_entry(entry: LeaderboardRecord) -> LeaderboardEntry:
+    return LeaderboardEntry(
+        user_id=entry.user_id,
+        nickname=entry.nickname,
+        score=entry.score,
+        game_type=entry.game_type,
+    )
+
+
+@app.post("/auth/guest")
+async def authenticate_guest(payload: GuestAuthRequest, db: Session = Depends(get_db)):
+    user = cast(UserRecord | None, cast(object, db.get(UserRecord, payload.device_id)))
+    if user:
+        user.name = payload.name
+    else:
+        user = UserRecord(
+            id=payload.device_id,
+            name=payload.name,
+            is_guest=True,
+        )
+        db.add(user)
+    db.commit()
+    db.refresh(user)
+    assert user is not None
+    return {"status": "success", "user": _to_user_profile(user)}
+
+
+async def get_current_user(
+    x_player_id: str = Header(..., alias="X-Player-ID"),
+    db: Session = Depends(get_db)
+) -> UserProfile:
+    user = cast(UserRecord | None, cast(object, db.get(UserRecord, x_player_id)))
+    if not user:
+        raise HTTPException(status_code=401, detail="Unknown device. Register as a guest.")
+    return _to_user_profile(user)
+
 
 FORBIDDEN_WORDS_POOL: dict[str, list[dict[str, list[object] | str]]] = {
     "general": [
@@ -118,72 +197,6 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/lessons", response_model=list[LessonListItem])
-async def list_lessons() -> list[LessonListItem]:
-    return [
-        LessonListItem(
-            lesson_id=lesson_id,
-            topic=lesson["topic"],
-            proficiency_level=lesson["proficiency_level"],
-        )
-        for lesson_id, lesson in lesson_store.items()
-    ]
-
-
-@app.post("/lessons/generate", response_model=LessonGenerateResponse)
-async def lesson_generate(payload: LessonGenerateRequest) -> LessonGenerateResponse:
-    lesson_id = str(uuid4())
-    primary_term = payload.topic.lower().strip()
-    flashcards = [
-        Flashcard(
-            term=f"key phrase: {primary_term}",
-            meaning=f"Useful phrase related to '{payload.topic}'.",
-            example_sentence=f"Today I want to talk about {primary_term}.",
-        ),
-        Flashcard(
-            term="follow-up question",
-            meaning="Question used to keep the conversation going.",
-            example_sentence=f"What do you enjoy most about {primary_term}?",
-        ),
-        Flashcard(
-            term="opinion marker",
-            meaning="Expression to present personal opinion.",
-            example_sentence="In my opinion, this is a practical approach.",
-        ),
-    ]
-    lesson_store[lesson_id] = {
-        "topic": payload.topic,
-        "proficiency_level": payload.proficiency_level,
-    }
-
-    return LessonGenerateResponse(
-        lesson_id=lesson_id,
-        topic=payload.topic,
-        introduction=(
-            f"This lesson focuses on '{payload.topic}' at {payload.proficiency_level} level. "
-            "You will practice concise answers and natural follow-up questions."
-        ),
-        flashcards=flashcards,
-    )
-
-
-@app.post("/lessons/{lesson_id}/feedback", response_model=LessonFeedbackResponse)
-async def lesson_feedback(
-        lesson_id: str, payload: LessonFeedbackRequest
-) -> LessonFeedbackResponse:
-    lesson = lesson_store.get(lesson_id)
-    if lesson is None:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-
-    return LessonFeedbackResponse(
-        lesson_id=lesson_id,
-        feedback=(
-            f"For lesson '{lesson['topic']}' ({lesson['proficiency_level']}), your message is clear. "
-            f"You wrote: '{payload.user_text}'. Add one specific example and one follow-up question to sound more natural."
-        ),
-    )
-
-
 @app.post("/forbidden-words/start", response_model=ForbiddenWordsStartResponse)
 async def forbidden_words_start(payload: ForbiddenWordsStartRequest) -> ForbiddenWordsStartResponse:
     entry = _pick_forbidden_words_entry(payload.topic)
@@ -212,6 +225,8 @@ async def forbidden_words_start(payload: ForbiddenWordsStartRequest) -> Forbidde
 @app.post("/forbidden-words/evaluate", response_model=ForbiddenWordsEvaluateResponse)
 async def forbidden_words_evaluate(
         payload: ForbiddenWordsEvaluateRequest,
+        current_user: UserProfile = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ) -> ForbiddenWordsEvaluateResponse:
     game = forbidden_words_store.get(payload.game_id)
     if game is None:
@@ -228,13 +243,21 @@ async def forbidden_words_evaluate(
 
     target_word = game["target_word"]
 
-    allowed = len(matched_forbidden_words)==0
+    allowed = len(matched_forbidden_words) == 0
 
     guessed_word, confidence = llm_service.forbidden_words(description=used_text)
 
+    db.add(LeaderboardRecord(
+        user_id=current_user.id,
+        nickname=current_user.name,
+        score=confidence,
+        game_type="forbidden_words"
+    ))
+    db.commit()
+
     if allowed:
-        if guessed_word==target_word:
-            if confidence>=65:
+        if guessed_word == target_word:
+            if confidence >= 65:
                 feedback = (
                     f"LLM odgadł słowo '{target_word}'. Opis był zrozumiały i nie zawierał zakazanych słów."
                 )
@@ -256,44 +279,10 @@ async def forbidden_words_evaluate(
     forbidden_words_store[payload.game_id] = game
 
     return ForbiddenWordsEvaluateResponse(
-        round_success=confidence > 64 and allowed and guessed_word==target_word,
+        round_success=confidence > 64 and allowed and guessed_word == target_word,
         confidence=confidence,
         feedback=feedback,
         status="success",
-    )
-
-
-@app.post("/hints", response_model=HintResponse)
-async def dynamic_hints(payload: HintRequest) -> HintResponse:
-    target = payload.target_expression or "a clearer transition phrase"
-    return HintResponse(
-        hint=(
-            f"Keep the sentence short, then add '{target}' in the second clause to sound more natural."
-        ),
-        corrected_example=(
-            "I understand your point, and to make it practical, I would add one concrete example."
-        ),
-    )
-
-
-@app.post("/audio/analyze", response_model=AudioAnalyzeResponse)
-async def audio_analyze(
-        audio_file: UploadFile = File(...),
-        expected_expressions: str = Form(default=""),
-        scenario: str = Form(default="general"),
-) -> AudioAnalyzeResponse:
-    expected = [item.strip() for item in expected_expressions.split(",") if item.strip()]
-    transcription_mock = (
-        f"[mock transcription] User speaks about '{scenario}' and attempts a contextual response."
-    )
-    return AudioAnalyzeResponse(
-        file_name=audio_file.filename or "unknown_audio",
-        content_type=audio_file.content_type,
-        transcription_mock=transcription_mock,
-        pronunciation_score=78,
-        vocabulary_fit_score=81,
-        detected_expected_expressions=expected[:2],
-        feedback="Pronunciation is mostly clear; refine stress and add one scenario-specific phrase.",
     )
 
 
@@ -330,7 +319,11 @@ async def generate_deck(request: CardRequest):
 
 
 @app.post("/cards/score", response_model=ScoreResponse)
-async def submit_score(score: ScoreRequest):
+async def submit_score(
+        score: ScoreRequest,
+        current_user: UserProfile = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     total_cards = len(score.answers)
 
     if total_cards == 0:
@@ -338,6 +331,14 @@ async def submit_score(score: ScoreRequest):
 
     correct_answers = sum(1 for ans in score.answers if ans.user_was_right)
     accuracy = (correct_answers / total_cards) * 100
+
+    db.add(LeaderboardRecord(
+        user_id=current_user.id,
+        nickname=current_user.name,
+        score=int(accuracy),
+        game_type="cards"
+    ))
+    db.commit()
 
     mistakes = [ans.text for ans in score.answers if not ans.user_was_right]
     successes = [ans.text for ans in score.answers if ans.user_was_right]
@@ -410,7 +411,11 @@ async def quick_reactions_evaluate(
 
 
 @app.post("/quick-reactions/end", response_model=QuickReactionsEndResponse)
-async def quick_reactions_end(payload: QuickReactionsEndRequest) -> QuickReactionsEndResponse:
+async def quick_reactions_end(
+        payload: QuickReactionsEndRequest,
+        current_user: UserProfile = Depends(get_current_user),
+        db: Session = Depends(get_db)
+) -> QuickReactionsEndResponse:
     game = quick_reactions_store.pop(payload.game_id, None)
 
     if game is None:
@@ -418,6 +423,16 @@ async def quick_reactions_end(payload: QuickReactionsEndRequest) -> QuickReactio
 
     rounds_played = len(game.history)
     success_count = sum(1 for round_item in game.history if round_item.success)
+
+    if success_count > 0:
+        points_earned = success_count
+        db.add(LeaderboardRecord(
+            user_id=current_user.id,
+            nickname=current_user.name,
+            score=points_earned,
+            game_type="quick_reactions"
+        ))
+        db.commit()
 
     if rounds_played == 0:
         final_feedback = "No rounds played yet. Start a round to get feedback on your quick reactions."
@@ -436,3 +451,20 @@ async def quick_reactions_end(payload: QuickReactionsEndRequest) -> QuickReactio
         rounds_played=rounds_played,
         final_feedback=final_feedback,
     )
+
+
+@app.get("/leaderboard")
+async def get_leaderboard(
+        game_type: str = "cards",
+        limit: int = 10,
+        db: Session = Depends(get_db)
+):
+    stmt = (
+        select(LeaderboardRecord)
+        .where(LeaderboardRecord.game_type == game_type)
+        .order_by(LeaderboardRecord.score.desc())
+        .limit(limit)
+    )
+    entries = db.scalars(stmt).all()
+
+    return [_to_leaderboard_entry(entry) for entry in entries]
