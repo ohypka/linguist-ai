@@ -186,7 +186,8 @@ async def lesson_feedback(
 
 @app.post("/forbidden-words/start", response_model=ForbiddenWordsStartResponse)
 async def forbidden_words_start(payload: ForbiddenWordsStartRequest) -> ForbiddenWordsStartResponse:
-    entry = _pick_forbidden_words_entry(payload.topic)
+    # entry = _pick_forbidden_words_entry(payload.topic)
+    entry = llm_service.forbidden_words(payload.topic.lower().strip() or "general")
     game_id = str(uuid4())
     target_word = str(entry["target_word"])
     forbidden_words = [str(word) for word in entry["forbidden_words"]]
@@ -221,16 +222,17 @@ async def forbidden_words_evaluate(
     if not used_text:
         raise HTTPException(status_code=400, detail="user_text or fallback_text is required")
 
+    target_word = game["target_word"]
+
     lowered_text = used_text.lower()
     matched_forbidden_words = [
         word for word in game["forbidden_words"] if word.lower() in lowered_text
     ]
+    matched_target_word = target_word.lower() in lowered_text
 
-    target_word = game["target_word"]
+    allowed = len(matched_forbidden_words)==0 and not matched_target_word
 
-    allowed = len(matched_forbidden_words)==0
-
-    guessed_word, confidence = llm_service.forbidden_words(description=used_text)
+    guessed_word, confidence = llm_service.forbidden_words_eval(description=used_text)
 
     if allowed:
         if guessed_word==target_word:
@@ -247,10 +249,15 @@ async def forbidden_words_evaluate(
                 f"LLM nie odgadł słowa '{target_word}'. Zamiast tego, odpowiedział '{guessed_word}'. Popracuj nad jakością opisu. Nie wykryto zakazanych słów."
             )
     else:
-        feedback = (
-            "Wykryto zakazane słowa: "
-            f"{', '.join(matched_forbidden_words)}."
-        )
+        if matched_target_word:
+            feedback = (
+                "Wykryto zakazane słowo docelowe, które było głównym celem opisu. Unikaj bezpośredniego używania tego słowa."
+            )
+        else:
+            feedback = (
+                "Wykryto zakazane słowa: "
+                f"{', '.join(matched_forbidden_words)}."
+            )
 
     game["finished"] = True
     forbidden_words_store[payload.game_id] = game
@@ -342,6 +349,8 @@ async def submit_score(score: ScoreRequest):
     mistakes = [ans.text for ans in score.answers if not ans.user_was_right]
     successes = [ans.text for ans in score.answers if ans.user_was_right]
 
+    llm_response = llm_service.cards_feedback(accuracy=accuracy, mistakes=mistakes, successes=successes)
+
     if accuracy == 100:
         mock_llm_response = "Perfekcyjnie! Masz świetne wyczucie gramatyki, żadne zdanie nie sprawiło Ci problemu."
     elif len(mistakes) > 0:
@@ -352,7 +361,7 @@ async def submit_score(score: ScoreRequest):
     return ScoreResponse(
         status="success",
         accuracy=round(accuracy, 2),
-        llm_feedback=mock_llm_response
+        llm_feedback=llm_response
     )
 
 
@@ -366,7 +375,8 @@ def _get_game(game_id: str) -> QuickReactionsState:
 @app.post("/quick-reactions/start", response_model=QuickReactionsStartResponse)
 async def quick_reactions_start(payload: QuickReactionsStartRequest) -> QuickReactionsStartResponse:
     game_id = str(uuid4())
-    prompt = _pick_quick_reactions_prompt()
+    # prompt = _pick_quick_reactions_prompt()
+    prompt = llm_service.quick_reactions()
 
     quick_reactions_store[game_id] = QuickReactionsState(current_prompt=prompt)
 
@@ -386,12 +396,19 @@ async def quick_reactions_evaluate(
     if not used_text:
         raise HTTPException(status_code=400, detail="user_text or fallback_text is required")
 
-    round_success = random.random() > 0.5
-
-    feedback = (
-        "Great riposte! Your response was witty and appropriate." if round_success else
-        "Your response was okay, but could be better. Try to be quicker and more clever!"
-    )
+    # round_success = random.random() > 0.5
+    evaluation = llm_service.quick_reactions_eval(game.current_prompt, used_text)
+    print(f"Evaluation for game {payload.game_id}: {evaluation}")
+    relevance = evaluation.get("relevance", 0)
+    creativity = evaluation.get("creativity", 0)
+    language_quality = evaluation.get("language_quality", 0)
+    feedback = evaluation.get("feedback", "")
+    if relevance < 20:
+        round_success = False
+    elif language_quality*0.5 + relevance*0.3 + creativity*0.2 > 50:
+        round_success = True
+    else:
+        round_success = False
 
     game.history.append(QuickReactionsRound(
         prompt=game.current_prompt,
@@ -399,7 +416,7 @@ async def quick_reactions_evaluate(
         success=round_success,
     ))
 
-    game.current_prompt = _pick_quick_reactions_prompt()
+    game.current_prompt = llm_service.quick_reactions()
 
     return QuickReactionsEvaluateResponse(
         round_success=round_success,
