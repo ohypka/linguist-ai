@@ -9,6 +9,8 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
+SQLite DB: `./app.db` is auto-created on startup if it does not exist.
+
 Swagger UI: `http://127.0.0.1:8000/docs`
 
 ## Docker
