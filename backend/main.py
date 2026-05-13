@@ -294,19 +294,6 @@ async def forbidden_words_evaluate(
 
 @app.post("/cards/start", response_model=list[Card])
 async def generate_deck(request: CardRequest):
-    mock_sentences = [
-        {"text": "She don't like apples.", "is_correct": False,
-         "explanation": "Powinno być 'doesn't', ponieważ 'she' to trzecia osoba liczby pojedynczej."},
-        {"text": "I have been working here for 5 years.", "is_correct": True,
-         "explanation": "Poprawne użycie Present Perfect Continuous."},
-        {"text": "He is more taller than his brother.", "is_correct": False,
-         "explanation": "Słowo 'taller' już ma stopień wyższy, nie dodajemy 'more'."},
-        {"text": "Let's discuss about the project.", "is_correct": False,
-         "explanation": "Czasownik 'discuss' nie wymaga przyimka 'about'."},
-        {"text": "They went to the cinema yesterday.", "is_correct": True,
-         "explanation": "Poprawne użycie czasu Past Simple."},
-    ]
-
     sentences = llm_service.generate_deck(count=request.card_count, topic=request.topic)
 
     deck = []
@@ -350,13 +337,6 @@ async def submit_score(
     successes = [ans.text for ans in score.answers if ans.user_was_right]
 
     llm_response = llm_service.cards_feedback(accuracy=accuracy, mistakes=mistakes, successes=successes)
-
-    if accuracy == 100:
-        mock_llm_response = "Perfekcyjnie! Masz świetne wyczucie gramatyki, żadne zdanie nie sprawiło Ci problemu."
-    elif len(mistakes) > 0:
-        mock_llm_response = f"Dobrze Ci idzie, ale widzę pewne problemy. Zwróć szczególną uwagę na zdania takie jak '{mistakes[0]}'. Przypomnij sobie zasady z tym związane. Za to świetnie poradziłeś sobie z resztą materiału!"
-    else:
-        mock_llm_response = "Poszło Ci bardzo dobrze, oby tak dalej!"
 
     return ScoreResponse(
         status="success",
