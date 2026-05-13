@@ -115,8 +115,8 @@ async def authenticate_guest(payload: GuestAuthRequest, db: Session = Depends(ge
 
 
 async def get_current_user(
-    x_player_id: str = Header(..., alias="X-Player-ID"),
-    db: Session = Depends(get_db)
+        x_player_id: str = Header(..., alias="X-Player-ID"),
+        db: Session = Depends(get_db)
 ) -> UserProfile:
     user = cast(UserRecord | None, cast(object, db.get(UserRecord, x_player_id)))
     if not user:
@@ -244,7 +244,7 @@ async def forbidden_words_evaluate(
     ]
     matched_target_word = target_word.lower() in lowered_text
 
-    allowed = len(matched_forbidden_words)==0 and not matched_target_word
+    allowed = len(matched_forbidden_words) == 0 and not matched_target_word
 
     guessed_word, confidence = llm_service.forbidden_words_eval(description=used_text)
 
@@ -373,7 +373,7 @@ def _get_game(game_id: str) -> QuickReactionsState:
 
 
 @app.post("/quick-reactions/start", response_model=QuickReactionsStartResponse)
-async def quick_reactions_start(payload: QuickReactionsStartRequest) -> QuickReactionsStartResponse:
+async def quick_reactions_start() -> QuickReactionsStartResponse:
     game_id = str(uuid4())
     prompt = llm_service.quick_reactions()
 
@@ -403,7 +403,7 @@ async def quick_reactions_evaluate(
     feedback = evaluation.get("feedback", "")
     if relevance < 20:
         round_success = False
-    elif language_quality*0.5 + relevance*0.3 + creativity*0.2 > 50:
+    elif language_quality * 0.5 + relevance * 0.3 + creativity * 0.2 > 50:
         round_success = True
     else:
         round_success = False

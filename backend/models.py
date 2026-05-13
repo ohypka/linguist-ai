@@ -53,10 +53,6 @@ class ScoreResponse(BaseModel):
     llm_feedback: str
 
 
-class QuickReactionsStartRequest(BaseModel):
-    pass
-
-
 class QuickReactionsStartResponse(BaseModel):
     game_id: str
     prompt: str
