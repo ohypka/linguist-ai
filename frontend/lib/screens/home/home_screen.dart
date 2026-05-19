@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../widgets/glass_card.dart';
 import '../games/tinder_screen.dart';
 import '../speaking/speaking_screen.dart';
+import '../games/forbidden_words_screen.dart';
+import '../games/quick_reactions_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -56,6 +58,12 @@ class HomeScreen extends StatelessWidget {
             // main navigation options
             buildCard(context, "Grammar Cards", Icons.swipe,
                 const TinderScreen()),
+            const SizedBox(height: 16),
+            buildCard(context, "Forbidden Words", Icons.swipe,
+                const ForbiddenWordsScreen()),
+            const SizedBox(height: 16),
+            buildCard(context, "Quick Reactions", Icons.swipe,
+                const QuickReactionsScreen()),
             const SizedBox(height: 16),
             buildCard(
                 context, "Speaking Mode", Icons.mic, const SpeakingScreen()),

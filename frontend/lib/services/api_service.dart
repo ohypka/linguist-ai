@@ -76,4 +76,57 @@ class ApiService {
 
     return jsonDecode(respStr);
   }
+
+  static Future<Map<String, dynamic>> startForbiddenWords(
+      String topic) async {
+    final res = await http.post(
+      Uri.parse("$baseUrl/forbidden-words/start"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"topic": topic}),
+    );
+
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> evaluateForbiddenWords({
+    required String gameId,
+    required String userText,
+  }) async {
+    final res = await http.post(
+      Uri.parse("$baseUrl/forbidden-words/evaluate"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "game_id": gameId,
+        "user_text": userText,
+      }),
+    );
+
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> startQuickReactions() async {
+    final res = await http.post(
+      Uri.parse("$baseUrl/quick-reactions/start"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({}),
+    );
+
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> evaluateQuickReactions({
+    required String gameId,
+    required String userText,
+  }) async {
+    final res = await http.post(
+      Uri.parse("$baseUrl/quick-reactions/evaluate"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "game_id": gameId,
+        "user_text": userText,
+      }),
+    );
+
+    return jsonDecode(res.body);
+  }
 }
