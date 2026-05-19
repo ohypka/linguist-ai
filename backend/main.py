@@ -381,9 +381,10 @@ async def quick_reactions_evaluate(
     creativity = evaluation.get("creativity", 0)
     language_quality = evaluation.get("language_quality", 0)
     feedback = evaluation.get("feedback", "")
+    score = (language_quality * 90 + relevance * 80 + creativity * 50) / 220
     if relevance < 20:
         round_success = False
-    elif language_quality * 0.5 + relevance * 0.3 + creativity * 0.2 > 50:
+    elif score > 50:
         round_success = True
     else:
         round_success = False
