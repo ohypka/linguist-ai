@@ -3,3 +3,6 @@ uvicorn
 python-multipart
 httpx
 pydantic
+openai
+python-dotenv
+sqlalchemy
