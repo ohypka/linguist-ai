@@ -6,16 +6,17 @@ import '../games/forbidden_words_screen.dart';
 import '../games/quick_reactions_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  final String topic;
 
-  // reusable navigation card (avoids duplicating UI + navigation logic)
+  const HomeScreen({super.key, required this.topic});
+
   Widget buildCard(
       BuildContext context, String title, IconData icon, Widget screen) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => screen), // simple navigation
+          MaterialPageRoute(builder: (_) => screen),
         );
       },
       child: GlassCard(
@@ -38,7 +39,6 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          // main background gradient for the home screen
           gradient: LinearGradient(
             colors: [Color(0xFF0F172A), Color(0xFF1E1B4B)],
             begin: Alignment.topLeft,
@@ -53,14 +53,18 @@ class HomeScreen extends StatelessWidget {
               "Linguist AI",
               style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 8),
+            Text(
+              "Topic: $topic",
+              style: const TextStyle(fontSize: 20, color: Colors.white54),
+            ),
             const SizedBox(height: 40),
 
-            // main navigation options
             buildCard(context, "Grammar Cards", Icons.swipe,
                 const TinderScreen()),
             const SizedBox(height: 16),
             buildCard(context, "Forbidden Words", Icons.swipe,
-                const ForbiddenWordsScreen()),
+                ForbiddenWordsScreen(topic: topic)),
             const SizedBox(height: 16),
             buildCard(context, "Quick Reactions", Icons.swipe,
                 const QuickReactionsScreen()),

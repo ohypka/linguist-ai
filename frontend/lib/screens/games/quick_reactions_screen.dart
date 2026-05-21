@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 import '../../services/speech_service.dart';
-
 import '../../widgets/game_card.dart';
 import '../../widgets/mic_button.dart';
 
@@ -9,23 +9,18 @@ class QuickReactionsScreen extends StatefulWidget {
   const QuickReactionsScreen({super.key});
 
   @override
-  State<QuickReactionsScreen> createState() =>
-      _QuickReactionsScreenState();
+  State<QuickReactionsScreen> createState() => _QuickReactionsScreenState();
 }
 
 class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
+  static const totalRounds = 5;
+
   final SpeechService speechService = SpeechService();
   bool speechEnabled = false;
   bool recording = false;
   String recognizedText = "";
 
-  final List<String> mockPool = [
-    "Excuse me, you just stepped on my invisible dog!",
-    "Why are you wearing pajamas to a business meeting?",
-    "I think your socks don't match, and it's bothering everyone.",
-    "Did you know that penguins have knees?",
-    "I just heard you got rejected by three places today.",
-  ];
+  bool isLoading = true;
 
   int index = 0;
   int score = 0;
@@ -43,7 +38,7 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
   void initState() {
     super.initState();
     initSpeech();
-    loadCard();
+    loadFirstCard();
   }
 
   Future<void> initSpeech() async {
@@ -52,46 +47,31 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
     setState(() {});
   }
 
-  Future<Map<String, dynamic>> mockStartGame() async {
-    await Future.delayed(const Duration(milliseconds: 250));
+  Future<void> loadFirstCard() async {
+    setState(() => isLoading = true);
 
-    return {
-      "game_id": "mock_quick_$index",
-      "prompt": mockPool[index],
-    };
-  }
+    try {
+      await ApiService.ensureRegistered();
+      final res = await ApiService.startQuickReactions();
 
-  Future<Map<String, dynamic>> mockEvaluate(String userText) async {
-    await Future.delayed(const Duration(milliseconds: 300));
+      setState(() {
+        gameId = res["game_id"];
+        prompt = res["prompt"];
+        timeLeft = 5;
+        recognizedText = "";
+        recording = false;
+        isLoading = false;
+      });
 
-    final success =
-        userText.trim().length > 5 &&
-            DateTime.now().millisecond % 2 == 0;
-
-    return {
-      "round_success": success,
-      "feedback": success
-          ? "Nice reaction!"
-          : "Too slow or weak response.",
-    };
-  }
-
-  Future<void> loadCard() async {
-    final res = await mockStartGame();
-
-    setState(() {
-      gameId = res["game_id"];
-      prompt = res["prompt"];
-      timeLeft = 5;
-      recognizedText = "";
-      recording = false;
-    });
-
-    startTimer();
+      startTimer();
+    } catch (e) {
+      setState(() => isLoading = false);
+    }
   }
 
   void startTimer() {
     timer?.cancel();
+    timeLeft = 5;
 
     timer = Timer.periodic(const Duration(seconds: 1), (t) async {
       if (timeLeft == 0) {
@@ -99,18 +79,14 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
         if (!mounted) return;
 
         setState(() => showWrongOverlay = true);
-
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;
-
         setState(() => showWrongOverlay = false);
 
-        nextCard();
+        await submit(autoFail: true);
       } else {
-        if (mounted) {
-          setState(() => timeLeft--);
-        }
+        if (mounted) setState(() => timeLeft--);
       }
     });
   }
@@ -119,97 +95,132 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
     if (!speechEnabled) return;
 
     if (!recording) {
-      await speechService.startListening((text)
-        {
-          if (!mounted) return;
-          setState(() => recognizedText = text);
-        },
-      );
+      await speechService.startListening((text) {
+        if (!mounted) return;
+        setState(() => recognizedText = text);
+      });
     } else {
       await speechService.stopListening();
     }
 
-    if (mounted) {
-      setState(() => recording = !recording);
-    }
+    if (mounted) setState(() => recording = !recording);
   }
 
   Future<void> submit({bool autoFail = false}) async {
     timer?.cancel();
 
-    final res = await mockEvaluate(
-      autoFail ? "" : recognizedText,
-    );
-
-    if (!mounted) return;
-
-    final success = res["round_success"];
-    final feedback = res["feedback"];
-
-    if (success) {
-      score++;
-
-      if (mounted) setState(() => showOverlay = true);
-      await Future.delayed(const Duration(milliseconds: 400));
-      if (mounted) setState(() => showOverlay = false);
-
-    } else {
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Result"),
-          content: Text(feedback),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Next"),
-            )
-          ],
-        ),
+    try {
+      final res = await ApiService.evaluateQuickReactions(
+        gameId: gameId!,
+        userText: (autoFail || recognizedText.isEmpty) ? "..." : recognizedText,
       );
+
+      if (!mounted) return;
+
+      final success = res["round_success"] as bool;
+      final feedback = res["feedback"] as String;
+      final nextPrompt = res["next_prompt"] as String;
+
+      if (success) {
+        score++;
+        setState(() => showOverlay = true);
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (mounted) setState(() => showOverlay = false);
+      } else {
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("Result"),
+            content: Text(feedback),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Next"),
+              )
+            ],
+          ),
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          prompt = nextPrompt;
+          timeLeft = 5;
+          recognizedText = "";
+          recording = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
     }
 
     nextCard();
   }
 
   void nextCard() {
-    if (index < mockPool.length - 1) {
+    if (index < totalRounds - 1) {
       setState(() => index++);
-      loadCard();
+      startTimer();
     } else {
       endGame();
     }
   }
 
-
   void endGame() {
     timer?.cancel();
 
-    final accuracy =
-    (score / mockPool.length * 100).toStringAsFixed(0);
+    ApiService.endQuickReactions(gameId!).then((res) {
+      if (!mounted) return;
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Your result"),
-        content: Text("Score: $score\nAccuracy: $accuracy%"),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
+      final finalFeedback = res["final_feedback"] as String? ?? "";
+      final accuracy = (score / totalRounds * 100).toStringAsFixed(0);
 
-              setState(() {
-                index = 0;
-                score = 0;
-              });
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Your result"),
+          content: Text("Score: $score\nAccuracy: $accuracy%\n\n$finalFeedback"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  index = 0;
+                  score = 0;
+                });
+                loadFirstCard();
+              },
+              child: const Text("Restart"),
+            )
+          ],
+        ),
+      );
+    }).catchError((_) {
+      if (!mounted) return;
 
-              loadCard();
-            },
-            child: const Text("Restart"),
-          )
-        ],
-      ),
-    );
+      final accuracy = (score / totalRounds * 100).toStringAsFixed(0);
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Your result"),
+          content: Text("Score: $score\nAccuracy: $accuracy%"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  index = 0;
+                  score = 0;
+                });
+                loadFirstCard();
+              },
+              child: const Text("Restart"),
+            )
+          ],
+        ),
+      );
+    });
   }
 
   @override
@@ -221,9 +232,15 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text("Card ${index + 1}/${mockPool.length}"),
+        title: Text("Round ${index + 1}/$totalRounds"),
       ),
       body: Column(
         children: [
@@ -240,10 +257,8 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
             child: Center(
               child: GameCard(
                 showOverlay: showOverlay || showWrongOverlay,
-                overlayColor:
-                showWrongOverlay ? Colors.red : Colors.green,
-                overlayIcon:
-                showWrongOverlay ? Icons.close : Icons.check,
+                overlayColor: showWrongOverlay ? Colors.red : Colors.green,
+                overlayIcon: showWrongOverlay ? Icons.close : Icons.check,
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Center(
@@ -267,10 +282,7 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
 
           const SizedBox(height: 10),
 
-          MicButton(
-            recording: recording,
-            onTap: toggleRecording,
-          ),
+          MicButton(recording: recording, onTap: toggleRecording),
 
           const SizedBox(height: 10),
 

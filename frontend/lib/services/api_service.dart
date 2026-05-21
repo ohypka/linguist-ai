@@ -7,6 +7,21 @@ class ApiService {
 
   static const baseUrl = "http://127.0.0.1:8000";
 
+  static const _playerId = "dev_player_1";
+  static bool _registered = false;
+
+  static Future<void> ensureRegistered() async {
+    if (_registered) return;
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/auth/guest"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"device_id": _playerId, "name": "Guest"}),
+      );
+    } catch (_) {}
+    _registered = true;
+  }
+
   static Future<List<dynamic>> startCards(String topic) async {
     final response = await http.post(
       Uri.parse("$baseUrl/cards/start"),
@@ -94,7 +109,10 @@ class ApiService {
   }) async {
     final res = await http.post(
       Uri.parse("$baseUrl/forbidden-words/evaluate"),
-      headers: {"Content-Type": "application/json"},
+      headers: {
+        "Content-Type": "application/json",
+        "X-Player-ID": _playerId,
+      },
       body: jsonEncode({
         "game_id": gameId,
         "user_text": userText,
@@ -125,6 +143,19 @@ class ApiService {
         "game_id": gameId,
         "user_text": userText,
       }),
+    );
+
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> endQuickReactions(String gameId) async {
+    final res = await http.post(
+      Uri.parse("$baseUrl/quick-reactions/end"),
+      headers: {
+        "Content-Type": "application/json",
+        "X-Player-ID": _playerId,
+      },
+      body: jsonEncode({"game_id": gameId}),
     );
 
     return jsonDecode(res.body);

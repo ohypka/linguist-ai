@@ -1,39 +1,28 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 import '../../services/speech_service.dart';
-
 import '../../widgets/game_card.dart';
 import '../../widgets/mic_button.dart';
 
 class ForbiddenWordsScreen extends StatefulWidget {
-  const ForbiddenWordsScreen({super.key});
+  final String topic;
+
+  const ForbiddenWordsScreen({super.key, required this.topic});
 
   @override
-  State<ForbiddenWordsScreen> createState() =>
-      _ForbiddenWordsScreenState();
+  State<ForbiddenWordsScreen> createState() => _ForbiddenWordsScreenState();
 }
 
 class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
+  static const totalRounds = 3;
+
   final SpeechService speechService = SpeechService();
   bool speechEnabled = false;
   bool recording = false;
   String recognizedText = "";
 
-
-  final List<Map<String, dynamic>> mockPool = [
-    {
-      "target": "airport",
-      "forbidden": ["plane", "terminal", "boarding"]
-    },
-    {
-      "target": "hotel",
-      "forbidden": ["room", "reception", "booking"]
-    },
-    {
-      "target": "restaurant",
-      "forbidden": ["menu", "waiter", "dinner"]
-    },
-  ];
+  bool isLoading = true;
 
   int index = 0;
   int score = 0;
@@ -61,47 +50,27 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
     setState(() {});
   }
 
-  Future<Map<String, dynamic>> mockStartGame() async {
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    final card = mockPool[index];
-
-    return {
-      "game_id": "mock_game_$index",
-      "target_word": card["target"],
-      "forbidden_words": card["forbidden"],
-      "prompt": "Describe the word without forbidden words",
-    };
-  }
-
-  Future<Map<String, dynamic>> mockEvaluate(String userText) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    final success = DateTime.now().millisecond % 2 == 0;
-
-    return {
-      "round_success": success,
-      "confidence": success ? 80 : 40,
-      "feedback": success
-          ? "AI guessed correctly from: $userText"
-          : "Forbidden words detected or unclear description.",
-      "status": "success"
-    };
-  }
-
   Future<void> loadCard() async {
-    final res = await mockStartGame();
+    setState(() => isLoading = true);
 
-    setState(() {
-      gameId = res["game_id"];
-      target = res["target_word"];
-      forbidden = List<String>.from(res["forbidden_words"]);
-      timeLeft = 30;
-      recognizedText = "";
-      recording = false;
-    });
+    try {
+      await ApiService.ensureRegistered();
+      final res = await ApiService.startForbiddenWords("${widget.topic} ${index + 1}");
 
-    startTimer();
+      setState(() {
+        gameId = res["game_id"];
+        target = res["target_word"];
+        forbidden = List<String>.from(res["forbidden_words"]);
+        timeLeft = 30;
+        recognizedText = "";
+        recording = false;
+        isLoading = false;
+      });
+
+      startTimer();
+    } catch (e) {
+      setState(() => isLoading = false);
+    }
   }
 
   void startTimer() {
@@ -112,31 +81,21 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
         t.cancel();
         if (!mounted) return;
 
-        setState(() {
-          showWrongOverlay = true;
-        });
-
+        setState(() => showWrongOverlay = true);
         await Future.delayed(const Duration(milliseconds: 700));
 
         if (!mounted) return;
-        setState(() {
-          showWrongOverlay = false;
-        });
+        setState(() => showWrongOverlay = false);
 
         nextCard();
       } else {
-        if (mounted) {
-          setState(() => timeLeft--);
-        }
+        if (mounted) setState(() => timeLeft--);
       }
     });
   }
 
   void toggleRecording() async {
-    if (!speechEnabled) {
-      debugPrint("speech not enabled");
-      return;
-    }
+    if (!speechEnabled) return;
 
     if (!recording) {
       debugPrint("start listening");
@@ -155,49 +114,52 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
       await speechService.stopListening();
     }
 
-    if (mounted) {
-      setState(() => recording = !recording);
-    }
+    if (mounted) setState(() => recording = !recording);
   }
 
   Future<void> submit() async {
-    debugPrint("submit text: $recognizedText");
+    timer?.cancel();
 
-    final res = await mockEvaluate(recognizedText);
-
-    if (!mounted) return;
-
-    final success = res["round_success"];
-    final feedback = res["feedback"];
-
-    if (success) {
-      score++;
-
-      if (mounted) setState(() => showOverlay = true);
-      await Future.delayed(const Duration(milliseconds: 600));
-      if (mounted) setState(() => showOverlay = false);
-
-    } else {
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("AI didn't guess it"),
-          content: Text(feedback),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Next"),
-            )
-          ],
-        ),
+    try {
+      final res = await ApiService.evaluateForbiddenWords(
+        gameId: gameId!,
+        userText: recognizedText.isEmpty ? "..." : recognizedText,
       );
+
+      if (!mounted) return;
+
+      final success = res["round_success"] as bool;
+      final feedback = res["feedback"] as String;
+
+      if (success) {
+        score++;
+        setState(() => showOverlay = true);
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (mounted) setState(() => showOverlay = false);
+      } else {
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("AI didn't guess it"),
+            content: Text(feedback),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Next"),
+              )
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
     }
 
     nextCard();
   }
 
   void nextCard() {
-    if (index < mockPool.length - 1) {
+    if (index < totalRounds - 1) {
       setState(() => index++);
       loadCard();
     } else {
@@ -208,8 +170,7 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
   void endGame() {
     timer?.cancel();
 
-    final accuracy =
-    (score / mockPool.length * 100).toStringAsFixed(0);
+    final accuracy = (score / totalRounds * 100).toStringAsFixed(0);
 
     showDialog(
       context: context,
@@ -220,12 +181,10 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-
               setState(() {
                 index = 0;
                 score = 0;
               });
-
               loadCard();
             },
             child: const Text("Restart"),
@@ -244,9 +203,15 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text("Word ${index + 1}/${mockPool.length}"),
+        title: Text("Word ${index + 1}/$totalRounds"),
       ),
       body: Column(
         children: [
@@ -280,13 +245,10 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
                       children: forbidden
                           .map(
                             (w) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(
-                            w,
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                        ),
-                      )
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Text(w, style: const TextStyle(fontSize: 18)),
+                            ),
+                          )
                           .toList(),
                     ),
                   ],
@@ -297,16 +259,11 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
 
           const SizedBox(height: 20),
 
-          Text(
-            recording ? "Listening..." : "Tap mic",
-          ),
+          Text(recording ? "Listening..." : "Tap mic"),
 
           const SizedBox(height: 10),
 
-          MicButton(
-            recording: recording,
-            onTap: toggleRecording,
-          ),
+          MicButton(recording: recording, onTap: toggleRecording),
 
           const SizedBox(height: 10),
 

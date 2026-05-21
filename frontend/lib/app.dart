@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/theme.dart';
-import 'screens/home/home_screen.dart';
+import 'screens/topic/topic_screen.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -9,8 +9,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme, // global app theme
-      home: const HomeScreen(), // entry screen
+      theme: AppTheme.darkTheme,
+      home: const TopicScreen(),
     );
   }
 }
