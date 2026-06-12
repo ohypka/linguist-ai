@@ -7,6 +7,7 @@ class ApiService {
 
   static const baseUrl = "http://127.0.0.1:8000";
 
+  static Future<Map<String, dynamic>> startCards(String topic) async {
   static const _playerId = "dev_player_1";
   static bool _registered = false;
 
@@ -38,7 +39,7 @@ class ApiService {
     print("START CARDS BODY: ${response.body}");
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(response.body) as Map<String, dynamic>;
     } else {
       throw Exception("Failed to load cards");
     }
