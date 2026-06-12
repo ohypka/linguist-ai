@@ -10,6 +10,7 @@ class TinderScreen extends StatefulWidget {
 
 class _TinderScreenState extends State<TinderScreen> {
   List<dynamic> cards = [];
+  String? gameId;
 
   bool isLoading = true;
 
@@ -34,7 +35,8 @@ class _TinderScreenState extends State<TinderScreen> {
       final response = await ApiService.startCards("travel");
 
       setState(() {
-        cards = response;
+        gameId = response["game_id"] as String?;
+        cards = response["cards"] as List<dynamic>;
         isLoading = false;
       });
     } catch (e) {
@@ -112,6 +114,7 @@ class _TinderScreenState extends State<TinderScreen> {
                 setState(() {
                   index = 0;
                   correct = 0;
+                  gameId = null;
                   resetPosition();
                   isLoading = true;
                 });

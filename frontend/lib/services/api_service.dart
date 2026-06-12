@@ -5,9 +5,9 @@ class ApiService {
   // Android emulator localhost mapping
   // static const baseUrl = "http://10.0.2.2:8000";
 
-  static const baseUrl = "http://127.0.0.1:8000";
+  static const baseUrl = "http://10.0.2.2:8000";
 
-  static Future<List<dynamic>> startCards(String topic) async {
+  static Future<Map<String, dynamic>> startCards(String topic) async {
     final response = await http.post(
       Uri.parse("$baseUrl/cards/start"),
       headers: {
@@ -23,7 +23,7 @@ class ApiService {
     print("START CARDS BODY: ${response.body}");
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(response.body) as Map<String, dynamic>;
     } else {
       throw Exception("Failed to load cards");
     }
