@@ -6,7 +6,10 @@ import '../../widgets/game_card.dart';
 import '../../widgets/mic_button.dart';
 
 class QuickReactionsScreen extends StatefulWidget {
-  const QuickReactionsScreen({super.key});
+  final String topic;
+  final String level;
+
+  const QuickReactionsScreen({super.key, this.topic = 'general', this.level = 'B1'});
 
   @override
   State<QuickReactionsScreen> createState() => _QuickReactionsScreenState();
@@ -52,7 +55,7 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
 
     try {
       await ApiService.ensureRegistered();
-      final res = await ApiService.startQuickReactions();
+      final res = await ApiService.startQuickReactions(topic: widget.topic, level: widget.level);
 
       setState(() {
         gameId = res["game_id"];
@@ -108,6 +111,11 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
 
   Future<void> submit({bool autoFail = false}) async {
     timer?.cancel();
+
+    if (recording) {
+      await speechService.stopListening();
+      if (mounted) setState(() => recording = false);
+    }
 
     try {
       final res = await ApiService.evaluateQuickReactions(

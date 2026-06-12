@@ -115,7 +115,7 @@ def forbidden_words_match(target_word: str, description: str) -> dict[str, objec
     )
     return json.loads(response.choices[0].message.content)
 
-def generate_deck(count : int, topic : str):
+def generate_deck(count: int, topic: str, level: str = 'B1'):
     system_prompt=(
         "Jesteś doświadczonym lektorem języka angielskiego, który pomaga polskim uczniom w nauce, wyłapując i tłumacząc typowe błędy gramatyczne, leksykalne oraz kalki językowe."
         "Twoim zadaniem jest wygenerowanie listy zdań w języku angielskim o zróżnicowanym poziomie trudności. "
@@ -127,7 +127,7 @@ def generate_deck(count : int, topic : str):
         "Nie dodawaj absolutnie żadnego tekstu, powitań ani komentarzy poza samym kodem JSON. "
         "Każdy obiekt musi mieć dokładnie taką strukturę:"
         "{"
-        "\"text\": \"[Tutaj zdanie po angielsku]\"," 
+        "\"text\": \"[Tutaj zdanie po angielsku]\","
         "\"is_correct\": [true lub false],"
         "\"explanation\": \"[Zwięzłe, edukacyjne wyjaśnienie po polsku dla zdań błędnych]\""
         "}"
@@ -143,7 +143,7 @@ def generate_deck(count : int, topic : str):
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Wygeneruj '{count}' nowych, unikalnych przykładów w ramach tematu '{topic}'."},
+            {"role": "user", "content": f"Wygeneruj '{count}' nowych, unikalnych przykładów w ramach tematu '{topic}'. Poziom CEFR: {level}."},
         ]
     )
 
@@ -176,7 +176,7 @@ def cards_feedback(accuracy, mistakes, successes):
     feedback = response.choices[0].message.content
     return feedback
 
-def quick_reactions(topic: str, recent_prompts: list[str] | None = None):
+def quick_reactions(topic: str, recent_prompts: list[str] | None = None, level: str = 'B1'):
     recent_prompt_text = "\n".join(f"- {prompt}" for prompt in (recent_prompts or []))
     system_prompt = (
         "You are an unpredictable, witty, and slightly chaotic NPC in a fast-paced English language learning minigame. "
@@ -208,7 +208,7 @@ def quick_reactions(topic: str, recent_prompts: list[str] | None = None):
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": "Topic: " + topic + "\nRecent prompts:\n" + (recent_prompt_text or "(none)") + "\nGenerate the sentence now.",
+                "content": "Topic: " + topic + "\nCEFR level: " + level + "\nRecent prompts:\n" + (recent_prompt_text or "(none)") + "\nGenerate the sentence now.",
             }
         ]
     )

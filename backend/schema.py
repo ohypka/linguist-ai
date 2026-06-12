@@ -38,6 +38,15 @@ class ForbiddenWordsEvaluateResponse(BaseModel):
     metrics: dict[str, Any]
 
 
+class ForbiddenWordsEndRequest(BaseModel):
+    total_score: int
+
+
+class ForbiddenWordsEndResponse(BaseModel):
+    score: int
+    status: str
+
+
 class ForbiddenWordsMetrics(BaseModel):
     confidence: int
     match_confidence: int

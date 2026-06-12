@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 
 class TinderScreen extends StatefulWidget {
-  const TinderScreen({super.key});
+  final String topic;
+  final String level;
+
+  const TinderScreen({super.key, required this.topic, required this.level});
 
   @override
   State<TinderScreen> createState() => _TinderScreenState();
@@ -16,6 +19,7 @@ class _TinderScreenState extends State<TinderScreen> {
 
   int index = 0;
   int correct = 0;
+  final List<Map<String, dynamic>> _answers = [];
 
   double positionX = 0;
   double positionY = 0;
@@ -32,7 +36,7 @@ class _TinderScreenState extends State<TinderScreen> {
 
   Future<void> loadCards() async {
     try {
-      final response = await ApiService.startCards("travel");
+      final response = await ApiService.startCards(widget.topic, level: widget.level);
 
       setState(() {
         gameId = response["game_id"] as String?;
@@ -56,9 +60,14 @@ class _TinderScreenState extends State<TinderScreen> {
 
   void handleAnswer(bool userChoice) async {
     final card = cards[index];
-    final isCorrect = card["is_correct"];
+    final isCorrect = card["is_correct"] as bool;
+    final userWasCorrect = isCorrect == userChoice;
 
-    bool userWasCorrect = isCorrect == userChoice;
+    _answers.add({
+      "card_id": card["id"],
+      "text": card["text"],
+      "user_was_right": userWasCorrect,
+    });
 
     if (userWasCorrect) {
       correct++;
@@ -98,35 +107,63 @@ class _TinderScreenState extends State<TinderScreen> {
         resetPosition();
       });
     } else {
-      final accuracy =
-      (correct / cards.length * 100).toStringAsFixed(0);
+      _submitAndShowResult();
+    }
+  }
 
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Your result"),
-          content: Text("Accuracy: $accuracy%"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
+  Future<void> _submitAndShowResult() async {
+    final accuracy = (correct / cards.length * 100).toStringAsFixed(0);
+    String feedback = '';
+    int? score;
 
-                setState(() {
-                  index = 0;
-                  correct = 0;
-                  gameId = null;
-                  resetPosition();
-                  isLoading = true;
-                });
+    try {
+      final result = await ApiService.scoreCards(
+        gameId: gameId!,
+        topic: widget.topic,
+        level: widget.level,
+        answers: List<Map<String, dynamic>>.from(_answers),
+      );
+      feedback = result["llm_feedback"] as String? ?? '';
+      score = result["score"] as int?;
+    } catch (_) {}
 
-                loadCards();
-              },
-              child: const Text("Restart"),
-            )
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Your result"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Accuracy: $accuracy%"),
+            if (score != null) Text("Score: $score pts"),
+            if (feedback.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(feedback),
+            ],
           ],
         ),
-      );
-    }
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                index = 0;
+                correct = 0;
+                gameId = null;
+                _answers.clear();
+                resetPosition();
+                isLoading = true;
+              });
+              loadCards();
+            },
+            child: const Text("Restart"),
+          ),
+        ],
+      ),
+    );
   }
 
   void onDragUpdate(DragUpdateDetails details) {

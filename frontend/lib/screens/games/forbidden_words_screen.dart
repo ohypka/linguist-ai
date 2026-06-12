@@ -7,8 +7,9 @@ import '../../widgets/mic_button.dart';
 
 class ForbiddenWordsScreen extends StatefulWidget {
   final String topic;
+  final String level;
 
-  const ForbiddenWordsScreen({super.key, required this.topic});
+  const ForbiddenWordsScreen({super.key, required this.topic, required this.level});
 
   @override
   State<ForbiddenWordsScreen> createState() => _ForbiddenWordsScreenState();
@@ -26,6 +27,7 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
 
   int index = 0;
   int score = 0;
+  int totalScore = 0;
 
   String? gameId;
   String target = "";
@@ -46,16 +48,21 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
 
   Future<void> initSpeech() async {
     speechEnabled = await speechService.init();
+    debugPrint("speechEnabled=$speechEnabled");
     if (!mounted) return;
     setState(() {});
   }
 
   Future<void> loadCard() async {
+    if (recording) {
+      await speechService.stopListening();
+      if (mounted) setState(() => recording = false);
+    }
     setState(() => isLoading = true);
 
     try {
       await ApiService.ensureRegistered();
-      final res = await ApiService.startForbiddenWords("${widget.topic} ${index + 1}");
+      final res = await ApiService.startForbiddenWords(widget.topic, level: widget.level);
 
       setState(() {
         gameId = res["game_id"];
@@ -120,6 +127,11 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
   Future<void> submit() async {
     timer?.cancel();
 
+    if (recording) {
+      await speechService.stopListening();
+      if (mounted) setState(() => recording = false);
+    }
+
     try {
       final res = await ApiService.evaluateForbiddenWords(
         gameId: gameId!,
@@ -128,8 +140,15 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
 
       if (!mounted) return;
 
-      final success = res["round_success"] as bool;
-      final feedback = res["feedback"] as String;
+      final bool apiSuccess = res["round_success"] as bool;
+      final String apiFeedback = res["feedback"] as String;
+      // if nothing was recorded, always treat as failure regardless of LLM response
+      final success = recognizedText.isNotEmpty && apiSuccess;
+      final String feedback = recognizedText.isEmpty
+          ? "You didn't say anything."
+          : apiFeedback;
+
+      totalScore += (res["score"] as num?)?.toInt() ?? 0;
 
       if (success) {
         score++;
@@ -170,6 +189,8 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
   void endGame() {
     timer?.cancel();
 
+    ApiService.endForbiddenWords(totalScore).catchError((_) {});
+
     final accuracy = (score / totalRounds * 100).toStringAsFixed(0);
 
     showDialog(
@@ -184,6 +205,7 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
               setState(() {
                 index = 0;
                 score = 0;
+                totalScore = 0;
               });
               loadCard();
             },

@@ -4,11 +4,13 @@ import '../games/tinder_screen.dart';
 import '../speaking/speaking_screen.dart';
 import '../games/forbidden_words_screen.dart';
 import '../games/quick_reactions_screen.dart';
+import '../leaderboard/leaderboard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final String topic;
+  final String level;
 
-  const HomeScreen({super.key, required this.topic});
+  const HomeScreen({super.key, required this.topic, required this.level});
 
   Widget buildCard(
       BuildContext context, String title, IconData icon, Widget screen) {
@@ -37,42 +39,61 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0F172A), Color(0xFF1E1B4B)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              "Linguist AI",
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0F172A), Color(0xFF1E1B4B)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              "Topic: $topic",
-              style: const TextStyle(fontSize: 20, color: Colors.white54),
-            ),
-            const SizedBox(height: 40),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  "Linguist AI",
+                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Topic: $topic",
+                  style: const TextStyle(fontSize: 20, color: Colors.white54),
+                ),
+                const SizedBox(height: 40),
 
-            buildCard(context, "Grammar Cards", Icons.swipe,
-                const TinderScreen()),
-            const SizedBox(height: 16),
-            buildCard(context, "Forbidden Words", Icons.swipe,
-                ForbiddenWordsScreen(topic: topic)),
-            const SizedBox(height: 16),
-            buildCard(context, "Quick Reactions", Icons.swipe,
-                const QuickReactionsScreen()),
-            const SizedBox(height: 16),
-            buildCard(
-                context, "Speaking Mode", Icons.mic, const SpeakingScreen()),
-          ],
-        ),
+                buildCard(context, "Grammar Cards", Icons.swipe,
+                    TinderScreen(topic: topic, level: level)),
+                const SizedBox(height: 16),
+                buildCard(context, "Forbidden Words", Icons.swipe,
+                    ForbiddenWordsScreen(topic: topic, level: level)),
+                const SizedBox(height: 16),
+                buildCard(context, "Quick Reactions", Icons.swipe,
+                    QuickReactionsScreen(topic: topic, level: level)),
+                const SizedBox(height: 16),
+                buildCard(
+                    context, "Speaking Mode", Icons.mic, const SpeakingScreen()),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: IconButton(
+                icon: const Icon(Icons.leaderboard, color: Colors.white),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const LeaderboardScreen(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
