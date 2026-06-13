@@ -17,6 +17,8 @@ class _TopicScreenState extends State<TopicScreen> {
   String _level = 'B1';
   bool _loading = false;
 
+  String? _nameError;
+
   static const _levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
   Future<void> _proceed() async {
@@ -24,13 +26,34 @@ class _TopicScreenState extends State<TopicScreen> {
 
     FocusScope.of(context).unfocus();
 
-    setState(() => _loading = true);
-
     final name = _nameController.text.trim();
     final topic = _topicController.text.trim();
 
+    if (name.isEmpty) {
+      setState(() {
+        _nameError = 'Please enter your name.';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your name to continue.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      return;
+    }
+
+    final topicToUse = topic.isEmpty ? 'general' : topic;
+
+    setState(() {
+      _loading = true;
+      _nameError = null;
+    });
+
     try {
-      await ApiService.init(name.isEmpty ? 'Guest' : name);
+      await ApiService.init(name);
 
       if (!mounted) return;
 
@@ -38,7 +61,7 @@ class _TopicScreenState extends State<TopicScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => HomeScreen(
-            topic: topic.isEmpty ? "general" : topic,
+            topic: topicToUse,
             level: _level,
           ),
         ),
@@ -102,18 +125,44 @@ class _TopicScreenState extends State<TopicScreen> {
                     ),
                   ),
                   const SizedBox(height: 32),
+
                   _buildTextField(
                     controller: _nameController,
                     hint: "Your name",
+                    errorText: _nameError,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (value) {
+                      if (_nameError != null && value.trim().isNotEmpty) {
+                        setState(() => _nameError = null);
+                      }
+                    },
                     onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                   ),
+
                   const SizedBox(height: 12),
+
                   _buildTextField(
                     controller: _topicController,
                     hint: "Topic: travel, food...",
+                    textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _proceed(),
                   ),
-                  const SizedBox(height: 16),
+
+                  const SizedBox(height: 8),
+
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "If you leave topic empty, general English will be used.",
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: _levels
@@ -157,7 +206,9 @@ class _TopicScreenState extends State<TopicScreen> {
                     )
                         .toList(),
                   ),
+
                   const SizedBox(height: 24),
+
                   SizedBox(
                     width: 180,
                     child: GestureDetector(
@@ -180,9 +231,11 @@ class _TopicScreenState extends State<TopicScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 16),
+
                   const Text(
-                    "Leave topic empty to use general English.",
+                    "Default topic: general",
                     style: TextStyle(
                       color: Colors.white38,
                       fontSize: 13,
@@ -202,16 +255,25 @@ class _TopicScreenState extends State<TopicScreen> {
     required TextEditingController controller,
     required String hint,
     required ValueChanged<String> onSubmitted,
+    ValueChanged<String>? onChanged,
+    String? errorText,
+    TextInputAction textInputAction = TextInputAction.next,
   }) {
     return TextField(
       controller: controller,
       enabled: !_loading,
       style: const TextStyle(color: Colors.white, fontSize: 18),
       onSubmitted: onSubmitted,
-      textInputAction: TextInputAction.next,
+      onChanged: onChanged,
+      textInputAction: textInputAction,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white38),
+        errorText: errorText,
+        errorStyle: const TextStyle(
+          color: Colors.redAccent,
+          fontSize: 13,
+        ),
         filled: true,
         fillColor: Colors.white10,
         contentPadding: const EdgeInsets.symmetric(
@@ -221,6 +283,26 @@ class _TopicScreenState extends State<TopicScreen> {
         border: const OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(16)),
           borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(16)),
+          borderSide: BorderSide(
+            color: errorText == null ? Colors.transparent : Colors.redAccent,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(16)),
+          borderSide: BorderSide(
+            color: errorText == null ? Colors.white24 : Colors.redAccent,
+          ),
+        ),
+        errorBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+          borderSide: BorderSide(color: Colors.redAccent),
+        ),
+        focusedErrorBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+          borderSide: BorderSide(color: Colors.redAccent),
         ),
       ),
     );
