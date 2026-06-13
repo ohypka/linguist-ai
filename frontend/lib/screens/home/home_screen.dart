@@ -274,7 +274,10 @@ class HomeScreen extends StatelessWidget {
                       title: 'Speaking Mode',
                       subtitle: 'Practice speaking with speech recognition.',
                       icon: Icons.mic,
-                      screen: const SpeakingScreen(),
+                      screen: SpeakingScreen(
+                        topic: topic,
+                        level: level,
+                      ),
                     ),
                   ],
                 ),
