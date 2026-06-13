@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,15 +28,45 @@ class ApiService {
 
   static Future<void> ensureRegistered() async {
     if (_registered) return;
-    _playerId ??= const Uuid().v4();
+
+    if (_playerId == null) {
+      final prefs = await SharedPreferences.getInstance();
+      _playerId = prefs.getString('device_id');
+
+      if (_playerId == null) {
+        _playerId = const Uuid().v4();
+        await prefs.setString('device_id', _playerId!);
+      }
+    }
+
     try {
-      await http.post(
+      final response = await http
+          .post(
         Uri.parse("$baseUrl/auth/guest"),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"device_id": _playerId, "name": _playerName}),
+        body: jsonEncode({
+          "device_id": _playerId,
+          "name": _playerName,
+        }),
+      )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          "Failed to register guest user. Status code: ${response.statusCode}",
+        );
+      }
+
+      _registered = true;
+    } on TimeoutException {
+      throw Exception(
+        "Backend is not responding. Check if the server is running.",
       );
-    } catch (_) {}
-    _registered = true;
+    } catch (e) {
+      throw Exception(
+        "Could not connect to backend. Details: $e",
+      );
+    }
   }
 
   static Future<Map<String, dynamic>> startCards(String topic, {String level = 'B1'}) async {
