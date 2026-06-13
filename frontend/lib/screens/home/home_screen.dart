@@ -183,20 +183,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLeaderboardButton(BuildContext context) {
-    return IconButton(
-      tooltip: 'Leaderboard',
-      icon: const Icon(
-        Icons.leaderboard,
-        color: Colors.white,
-      ),
-      onPressed: () => _openScreen(
-        context,
-        const LeaderboardScreen(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
