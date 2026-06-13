@@ -7,6 +7,7 @@ import '../games/tinder_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
 import '../speaking/speaking_screen.dart';
 import '../topic/topic_screen.dart';
+import '../history/history_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final String topic;
@@ -283,9 +284,34 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 8,
-                right: 8,
-                child: _buildLeaderboardButton(context),
+                top: 0,
+                right: 0,
+                child: SafeArea(
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: "History",
+                        icon: const Icon(Icons.history, color: Colors.white),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const HistoryScreen(),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: "Leaderboard",
+                        icon: const Icon(Icons.leaderboard, color: Colors.white),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const LeaderboardScreen(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

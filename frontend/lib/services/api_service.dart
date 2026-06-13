@@ -241,6 +241,45 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<List<Map<String, dynamic>>> getHistory({
+    String? gameType,
+    int limit = 50,
+  }) async {
+    await ensureRegistered();
+
+    final queryParameters = <String, String>{
+      "limit": limit.toString(),
+    };
+
+    if (gameType != null && gameType.trim().isNotEmpty) {
+      queryParameters["game_type"] = gameType;
+    }
+
+    final uri = Uri.parse("$baseUrl/history").replace(
+      queryParameters: queryParameters,
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Player-ID": _playerId!,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+
+      if (decoded is List) {
+        return List<Map<String, dynamic>>.from(decoded);
+      }
+
+      throw Exception("Invalid history response format");
+    }
+
+    throw Exception("Failed to load history");
+  }
+
   static Future<List<Map<String, dynamic>>> getLeaderboard(String gameType) async {
     final response = await http.get(
       Uri.parse('$baseUrl/leaderboard?game_type=$gameType&limit=10'),
