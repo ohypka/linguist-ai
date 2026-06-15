@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from db_models import (
     CardsSessionRecord,
     ForbiddenWordsSessionRecord,
+    LessonHistoryRecord,
     QuickReactionsSessionRecord,
 )
 from schema import Level, QuickReactionsRound, QuickReactionsState
@@ -145,6 +146,60 @@ def save_quick_reactions_session(
 
 def load_forbidden_words_state(record: ForbiddenWordsSessionRecord) -> dict[str, Any]:
     return _load_state(record.state)
+
+
+def previous_forbidden_words_target_words(
+    db: Session,
+    user_id: str,
+    topic: str,
+    level: Level,
+    limit: int = 5,
+) -> list[str]:
+    target_words: list[str] = []
+    seen: set[str] = set()
+
+    active_stmt = (
+        select(ForbiddenWordsSessionRecord)
+        .where(ForbiddenWordsSessionRecord.user_id == user_id)
+        .where(ForbiddenWordsSessionRecord.topic == topic)
+        .where(ForbiddenWordsSessionRecord.level == level)
+        .order_by(ForbiddenWordsSessionRecord.updated_at.desc())
+    )
+    for record in db.scalars(active_stmt):
+        state = _load_state(record.state)
+        target_word = str(state.get("target_word", "")).strip()
+        normalized = target_word.lower()
+        if not target_word or normalized in seen:
+            continue
+        seen.add(normalized)
+        target_words.append(target_word)
+        if len(target_words) >= limit:
+            return target_words
+
+    history_stmt = (
+        select(LessonHistoryRecord)
+        .where(LessonHistoryRecord.user_id == user_id)
+        .where(LessonHistoryRecord.game_type == "forbidden_words")
+        .where(LessonHistoryRecord.topic == topic)
+        .where(LessonHistoryRecord.level == level)
+        .order_by(LessonHistoryRecord.ended_at.desc())
+    )
+    for row in db.scalars(history_stmt):
+        try:
+            metrics = cast(dict[str, Any], json.loads(row.metrics))
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        target_word = str(metrics.get("target_word", "")).strip()
+        normalized = target_word.lower()
+        if not target_word or normalized in seen:
+            continue
+        seen.add(normalized)
+        target_words.append(target_word)
+        if len(target_words) >= limit:
+            break
+
+    return target_words
 
 
 def load_quick_reactions_state(record: QuickReactionsSessionRecord) -> QuickReactionsState:

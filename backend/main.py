@@ -157,6 +157,49 @@ def _forbidden_words_score_breakdown(
     }
 
 
+def _is_valid_forbidden_words_entry(candidate: dict[str, object]) -> bool:
+    target_word = str(candidate.get("target_word", "")).strip()
+    forbidden_words = candidate.get("forbidden_words")
+
+    if not target_word or not isinstance(forbidden_words, list) or len(forbidden_words) != 3:
+        return False
+
+    normalized_target = target_word.lower()
+    normalized_forbidden_words: list[str] = []
+    for word in forbidden_words:
+        normalized_word = str(word).strip().lower()
+        if not normalized_word or normalized_word == normalized_target:
+            return False
+        normalized_forbidden_words.append(normalized_word)
+
+    return len(set(normalized_forbidden_words)) == 3
+
+
+def _forbidden_words_end_score(db, user_id: str, limit: int = 3) -> int:
+    stmt = (
+        select(LessonHistoryRecord)
+        .where(LessonHistoryRecord.user_id == user_id)
+        .where(LessonHistoryRecord.game_type == "forbidden_words")
+        .order_by(LessonHistoryRecord.ended_at.desc())
+        .limit(limit)
+    )
+
+    total_score = 0
+    for row in db.scalars(stmt):
+        try:
+            metrics = cast(dict[str, Any], json.loads(row.metrics))
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        score_breakdown = metrics.get("score_breakdown")
+        if isinstance(score_breakdown, dict):
+            total_score += int(score_breakdown.get("final_score", 0) or 0)
+        else:
+            total_score += int(metrics.get("score", 0) or 0)
+
+    return total_score
+
+
 def _quick_reactions_round_metrics(
         *,
         relevance: int,
@@ -240,8 +283,35 @@ async def forbidden_words_start(
     sessions.cleanup_stale_sessions(db)
 
     topic = payload.topic.lower().strip() or "general"
-    print(f"[DEBUG] forbidden-words/start: level={payload.level}, topic={topic}")
-    entry = llm_service.forbidden_words(topic, payload.level)
+    previous_target_words = sessions.previous_forbidden_words_target_words(
+        db,
+        current_user.id,
+        topic,
+        payload.level,
+    )
+    previous_target_words_set = {word.lower() for word in previous_target_words}
+
+    entry: dict[str, object] | None = None
+    for attempt in range(3):
+        candidate = llm_service.forbidden_words(
+            topic,
+            payload.level,
+            previous_target_words=previous_target_words,
+        )
+        if not _is_valid_forbidden_words_entry(candidate):
+            continue
+
+        candidate_target_word = str(candidate.get("target_word", "")).strip().lower()
+        if not previous_target_words_set or candidate_target_word not in previous_target_words_set:
+            entry = candidate
+            break
+
+        if attempt == 2:
+            entry = candidate
+
+    if entry is None:
+        raise HTTPException(status_code=503, detail="Failed to generate a valid forbidden words round")
+
     game_id = str(uuid4())
     target_word = str(entry["target_word"])
     forbidden_words = [str(word) for word in entry["forbidden_words"]]
@@ -298,8 +368,20 @@ async def forbidden_words_evaluate(
             started_at=None,
             ended_at=datetime.utcnow(),
             user_answers=json.dumps({"user_text": payload.user_text, "fallback_text": payload.fallback_text}),
-            llm_feedback=json.dumps({"low_effort": True}),
-            metrics=json.dumps({"score": 0, "low_effort": True}),
+            llm_feedback=json.dumps({
+                "game_id": payload.game_id,
+                "target_word": game["target_word"],
+                "forbidden_words": game["forbidden_words"],
+                "low_effort": True,
+                "feedback": "Nie podano opisu.",
+            }),
+            metrics=json.dumps({
+                "game_id": payload.game_id,
+                "target_word": game["target_word"],
+                "forbidden_words": game["forbidden_words"],
+                "score": 0,
+                "low_effort": True,
+            }),
         ))
         sessions.delete_forbidden_words_session(db, payload.game_id)
         db.commit()
@@ -401,10 +483,12 @@ async def forbidden_words_evaluate(
             "allowed": allowed,
             "matched_forbidden_words": matched_forbidden_words,
             "matched_target_word": matched_target_word,
+            "target_word": target_word,
             "score_breakdown": score_breakdown,
         }),
         metrics=json.dumps({
             "game_id": payload.game_id,
+            "target_word": target_word,
             "score_breakdown": score_breakdown,
         }),
     ))
@@ -428,14 +512,15 @@ async def forbidden_words_end(
         current_user: CurrentUserDep,
         db: DbDep,
 ) -> ForbiddenWordsEndResponse:
+    final_score = _forbidden_words_end_score(db, current_user.id)
     db.add(LeaderboardRecord(
         user_id=current_user.id,
         nickname=current_user.name,
-        score=payload.total_score,
+        score=final_score,
         game_type="forbidden_words",
     ))
     db.commit()
-    return ForbiddenWordsEndResponse(score=payload.total_score, status="success")
+    return ForbiddenWordsEndResponse(score=final_score, status="success")
 
 
 @app.post("/cards/start", response_model=CardsStartResponse, response_model_exclude_none=True)

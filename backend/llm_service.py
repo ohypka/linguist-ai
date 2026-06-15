@@ -11,7 +11,8 @@ client = OpenAI(
 )
 model = "gpt-4o-mini"
 
-def forbidden_words(topic: str, level: str):
+def forbidden_words(topic: str, level: str, previous_target_words: list[str] | None = None):
+    previous_target_words_text = ", ".join(previous_target_words or []) or "(none)"
     system_prompt = (
         "You are an English teacher assistant working as a backend for a language learning app. "
         "Your task is to generate a vocabulary challenge similar to the game \"Taboo\"."
@@ -28,6 +29,12 @@ def forbidden_words(topic: str, level: str):
         "Strict Rules:"
         "- All words must be in English."
         "- Do not use the target word itself as a forbidden word."
+        "- Avoid repeating any target word from the provided previous target words list."
+        "- If the topic is narrow, still choose a fresh and natural alternative instead of repeating a recent word."
+        "- The forbidden words must keep the round playable: avoid trap combinations where the target becomes nearly impossible to describe."
+        "- Do not use forbidden words that are overly generic, definitional core words, or near-overlaps that remove all obvious ways to explain the target."
+        "- Prefer related clues that make the task challenging but still solvable by paraphrasing."
+        "- If a target would force impossible forbidden words, choose a simpler or more describable target instead."
         "- Return ONLY a raw JSON object. Do not include markdown code blocks or any conversational text."
         ""
         "Format your response exactly like this:"
@@ -38,14 +45,19 @@ def forbidden_words(topic: str, level: str):
     )
     response = client.chat.completions.create(
         model=model,
+        temperature=1.1,
         messages=[
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": "Generate a target word and forbidden words for the topic: "
-                + topic
-                + ". CEFR level: "
-                + level,
+                "content": (
+                    "Generate a target word and forbidden words for the topic: "
+                    + topic
+                    + ". CEFR level: "
+                    + level
+                    + "\nPrevious target words to avoid: "
+                    + previous_target_words_text
+                ),
             }
         ]
     )
