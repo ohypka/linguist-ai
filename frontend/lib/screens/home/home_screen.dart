@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../widgets/glass_card.dart';
+import '../../services/api_service.dart';
 import '../games/forbidden_words_screen.dart';
 import '../games/quick_reactions_screen.dart';
 import '../games/tinder_screen.dart';
@@ -27,7 +28,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _changeTopic(BuildContext context) {
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const TopicScreen()),
     );
@@ -135,7 +136,7 @@ class HomeScreen extends StatelessWidget {
           TextButton.icon(
             onPressed: () => _changeTopic(context),
             icon: const Icon(Icons.edit, size: 18),
-            label: const Text('Change topic or level'),
+            label: const Text('Change topic, level or name'),
             style: TextButton.styleFrom(
               foregroundColor: Colors.white70,
             ),
@@ -212,6 +213,15 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    Text(
+                      'Hello, ${ApiService.playerName}!',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: Colors.white54,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
                     const Text(
                       'Choose a game mode and practice English with AI.',
                       textAlign: TextAlign.center,

@@ -12,11 +12,18 @@ class TopicScreen extends StatefulWidget {
 
 class _TopicScreenState extends State<TopicScreen> {
   final _topicController = TextEditingController();
+  late final TextEditingController _nameController;
 
   String _level = 'B1';
   bool _loading = false;
 
   static const _levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: ApiService.playerName);
+  }
 
   Future<void> _proceed() async {
     if (_loading) return;
@@ -25,8 +32,18 @@ class _TopicScreenState extends State<TopicScreen> {
 
     final topic = _topicController.text.trim();
     final topicToUse = topic.isEmpty ? 'general' : topic;
+    final name = _nameController.text.trim();
 
-    Navigator.pushReplacement(
+    if (name.isNotEmpty && name != ApiService.playerName) {
+      setState(() => _loading = true);
+      try {
+        await ApiService.init(name);
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
         builder: (_) => HomeScreen(
@@ -34,12 +51,14 @@ class _TopicScreenState extends State<TopicScreen> {
           level: _level,
         ),
       ),
+      (route) => false,
     );
   }
 
   @override
   void dispose() {
     _topicController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -71,7 +90,9 @@ class _TopicScreenState extends State<TopicScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "Hello, ${ApiService.playerName}! Choose your topic and level.",
+                    Navigator.canPop(context)
+                        ? "Change your topic or level"
+                        : "Hello, ${ApiService.playerName}! Choose your topic and level.",
                     style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white54,
@@ -79,6 +100,16 @@ class _TopicScreenState extends State<TopicScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
+
+                  if (Navigator.canPop(context)) ...[
+                    _buildTextField(
+                      controller: _nameController,
+                      hint: "Your name",
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   _buildTextField(
                     controller: _topicController,
@@ -162,25 +193,26 @@ class _TopicScreenState extends State<TopicScreen> {
                               strokeWidth: 2,
                             ),
                           )
-                              : const Text(
-                            "Start",
-                            style: TextStyle(fontSize: 20),
+                              : Text(
+                            Navigator.canPop(context) ? "Save" : "Start",
+                            style: const TextStyle(fontSize: 20),
                           ),
                         ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
 
-                  const Text(
-                    "Default topic: general",
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 13,
+                  if (Navigator.canPop(context)) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        "Cancel",
+                        style: TextStyle(color: Colors.white38, fontSize: 15),
+                      ),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
+                  ],
                 ],
               ),
             ),
