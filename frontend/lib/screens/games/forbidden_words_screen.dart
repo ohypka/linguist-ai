@@ -305,15 +305,6 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
                 "Round score: $roundScore pts",
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              if (recognizedText.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  "Your answer:",
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Text(recognizedText.trim()),
-              ],
             ],
           ),
         ),

@@ -241,22 +241,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
         targetWord = metrics["target_word"]?.toString().trim() ?? "";
       }
 
-      String userText = "";
-      if (answers is Map<String, dynamic>) {
-        userText = answers["user_text"]?.toString().trim() ?? "";
-        if (userText.isEmpty) {
-          userText = answers["fallback_text"]?.toString().trim() ?? "";
-        }
-      }
-
       if (targetWord.isNotEmpty) {
         items.add(MapEntry("Target word", targetWord));
       }
       if (forbiddenWords.isNotEmpty) {
         items.add(MapEntry("Forbidden words", forbiddenWords.join(", ")));
-      }
-      if (userText.isNotEmpty) {
-        items.add(MapEntry("Answer", userText));
       }
 
       return items;
