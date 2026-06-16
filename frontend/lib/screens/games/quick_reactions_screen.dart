@@ -492,6 +492,7 @@ class _QuickReactionsScreenState extends State<QuickReactionsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(

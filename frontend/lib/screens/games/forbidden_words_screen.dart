@@ -378,6 +378,7 @@ class _ForbiddenWordsScreenState extends State<ForbiddenWordsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(

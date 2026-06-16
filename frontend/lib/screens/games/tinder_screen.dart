@@ -283,6 +283,7 @@ class _TinderScreenState extends State<TinderScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(
