@@ -188,6 +188,62 @@ def cards_feedback(accuracy, mistakes, successes):
     feedback = response.choices[0].message.content
     return feedback
 
+
+def speaking_evaluate(topic: str, level: str, prompt: str, user_text: str) -> dict[str, object]:
+    system_prompt = (
+        "Jesteś wspierającym lektorem języka angielskiego w aplikacji do nauki. "
+        "Oceń krótką odpowiedź mówioną ucznia na prompt po angielsku. "
+        "Wejście pochodzi z speech-to-text, więc transcript może być częściowo zabrudzony lub mieć pojedyncze błędnie rozpoznane słowa. "
+        "Masz ocenić wypowiedź w kontekście tematu i poziomu CEFR. "
+        "Zwróć WYŁĄCZNIE JSON z polami relevance, language_quality, detail i feedback. "
+        ""
+        "Kryteria:"
+        "1. relevance: na ile odpowiedź rzeczywiście odpowiada na prompt."
+        "2. language_quality: na ile język brzmi naturalnie i poprawnie, biorąc pod uwagę możliwe przekłamania STT."
+        "3. detail: na ile odpowiedź jest rozwinięta i konkretna."
+        ""
+        "Zasady:"
+        "- Każdy score ma być liczbą 0-100."
+        "- Feedback ma być krótki, naturalny, po polsku i bez wspominania modelu lub procesu oceny."
+        "- Zwracaj się bezpośrednio do użytkownika."
+        "- Oceniaj przede wszystkim sens wypowiedzi, intencję i ilość przekazanej treści."
+        "- Nie obniżaj mocno oceny za pojedyncze dziwne słowa, jeśli reszta wypowiedzi jasno pokazuje, co użytkownik chciał powiedzieć."
+        "- Jeśli transcript wygląda na częściowo zniekształcony przez STT, bądź ostrożny w krytykowaniu konkretnych słów lub form."
+        "- Jeśli odpowiedź jest bardzo krótka, detail powinien być niski."
+        "- Jeśli użytkownik podał kilka konkretnych informacji, listę elementów albo przykład, detail powinien być raczej wysoki."
+        "- Nie wolno narzekać na brak szczegółów, słabe rozwinięcie albo małe zróżnicowanie, jeśli transcript zawiera już kilka konkretów."
+        "- Najpierw nazwij jedną realną mocną stronę odpowiedzi. Dopiero potem możesz dodać jedną małą, konkretną wskazówkę."
+        "- Jeśli odpowiedź jest sensowna i rozwinięta, feedback może być po prostu pozytywny. Nie wymuszaj krytyki na siłę."
+        "- Nie twórz uwag, których nie da się obronić na podstawie transcriptu."
+        "- Output ONLY JSON, bez dodatkowego tekstu."
+        ""
+        "Format:"
+        "{"
+        '\"relevance\": 70,'
+        '\"language_quality\": 65,'
+        '\"detail\": 55,'
+        '\"feedback\": \"Krótki feedback po polsku.\"'
+        "}"
+    )
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    "Topic: " + topic
+                    + "\nCEFR level: " + level
+                    + "\nPrompt: " + prompt
+                    + "\nStudent response: " + user_text
+                ),
+            },
+        ],
+    )
+
+    return json.loads(response.choices[0].message.content)
+
 def quick_reactions(topic: str, recent_prompts: list[str] | None = None, level: str = 'B1'):
     recent_prompt_text = "\n".join(f"- {prompt}" for prompt in (recent_prompts or []))
     system_prompt = (

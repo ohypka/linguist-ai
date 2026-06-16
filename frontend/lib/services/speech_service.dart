@@ -4,6 +4,8 @@ class SpeechService {
   final SpeechToText _speech = SpeechToText();
 
   bool _available = false;
+  String _latestRecognizedText = '';
+  String _latestFinalText = '';
 
   Future<bool> init() async {
     _available = await _speech.initialize(
@@ -19,9 +21,12 @@ class SpeechService {
   }
 
   Future<void> startListening(
-      Function(String text) onResult,
-      ) async {
+    Function(String text) onResult,
+  ) async {
     if (!_available) return;
+
+    _latestRecognizedText = '';
+    _latestFinalText = '';
 
     await _speech.listen(
       localeId: 'en_US',
@@ -34,6 +39,10 @@ class SpeechService {
         final text = result.recognizedWords.trim();
 
         if (text.isNotEmpty) {
+          _latestRecognizedText = text;
+          if (result.finalResult) {
+            _latestFinalText = text;
+          }
           onResult(text);
         }
       },
@@ -42,6 +51,7 @@ class SpeechService {
 
   Future<void> stopListening() async {
     await _speech.stop();
+    await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
   Future<void> cancelListening() async {
@@ -49,4 +59,16 @@ class SpeechService {
   }
 
   bool get isListening => _speech.isListening;
+
+  String get latestRecognizedText => _latestRecognizedText;
+
+  String get latestFinalText => _latestFinalText;
+
+  String get bestRecognizedText {
+    if (_latestFinalText.trim().isNotEmpty) {
+      return _latestFinalText.trim();
+    }
+
+    return _latestRecognizedText.trim();
+  }
 }

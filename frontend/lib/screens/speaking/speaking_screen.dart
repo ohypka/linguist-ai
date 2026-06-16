@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../services/api_service.dart';
 import '../../services/speech_service.dart';
 import '../../widgets/mic_button.dart';
 
@@ -23,6 +24,7 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
   bool speechEnabled = false;
   bool recording = false;
   bool isInitializing = true;
+  bool isSubmitting = false;
 
   String _liveTranscript = "";
   String _savedTranscript = "";
@@ -181,8 +183,49 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
     });
   }
 
+  Future<void> _submitSpeakingAnswer({
+    required String prompt,
+    required String text,
+  }) async {
+    if (text.trim().isEmpty) {
+      return;
+    }
+
+    setState(() {
+      isSubmitting = true;
+      result = '';
+    });
+
+    try {
+      final response = await ApiService.evaluateSpeaking(
+        topic: widget.topic,
+        level: widget.level,
+        prompt: prompt,
+        userText: text,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        result = response['feedback']?.toString().trim().isNotEmpty == true
+            ? response['feedback'].toString()
+            : _buildLocalFeedback();
+        isSubmitting = false;
+      });
+      _moveToNextTask();
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        result = _buildLocalFeedback();
+        isSubmitting = false;
+      });
+      _moveToNextTask();
+    }
+  }
+
   Future<void> toggleRecording() async {
-    if (isInitializing) return;
+    if (isInitializing || isSubmitting) return;
 
     if (!speechEnabled) {
       setState(() {
@@ -199,13 +242,15 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
           result = '';
         });
 
-        await speechService.startListening((text) {
-          if (!mounted) return;
+        await speechService.startListening(
+          (text) {
+            if (!mounted) return;
 
-          setState(() {
-            _liveTranscript = text;
-          });
-        });
+            setState(() {
+              _liveTranscript = text;
+            });
+          },
+        );
 
         if (!mounted) return;
 
@@ -217,16 +262,24 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
 
         if (!mounted) return;
 
-        final finalText = _liveTranscript.trim();
+        final currentPrompt = _currentPrompt;
+        final finalText = speechService.bestRecognizedText;
 
         setState(() {
           recording = false;
           _savedTranscript = finalText;
-          result = _buildLocalFeedback();
+          _liveTranscript = finalText;
         });
 
         if (finalText.isNotEmpty) {
-          _moveToNextTask();
+          await _submitSpeakingAnswer(
+            prompt: currentPrompt,
+            text: finalText,
+          );
+        } else {
+          setState(() {
+            result = _buildLocalFeedback();
+          });
         }
       }
     } catch (e) {
@@ -240,6 +293,8 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
   }
 
   Future<void> clearTranscript() async {
+    if (isSubmitting) return;
+
     if (recording) {
       await speechService.stopListening();
     }
@@ -469,6 +524,8 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
                 Text(
                   isInitializing
                       ? 'Preparing speech recognition...'
+                      : isSubmitting
+                      ? 'Checking your answer...'
                       : recording
                       ? 'Listening... tap again to stop'
                       : canUseMic
@@ -515,8 +572,9 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _visibleTranscript.trim().isEmpty &&
-                            !recording
+                        onPressed: ((_visibleTranscript.trim().isEmpty &&
+                                !recording) ||
+                            isSubmitting)
                             ? null
                             : clearTranscript,
                         icon: const Icon(Icons.delete_outline),
@@ -532,7 +590,7 @@ class _SpeakingScreenState extends State<SpeakingScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: recording
+                        onPressed: recording || isSubmitting
                             ? null
                             : () {
                           clearTranscript();

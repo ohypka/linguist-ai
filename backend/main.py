@@ -200,6 +200,26 @@ def _forbidden_words_end_score(db, user_id: str, limit: int = 3) -> int:
     return total_score
 
 
+def _is_low_effort_speaking_response(text: str) -> bool:
+    words = [word for word in text.strip().split() if word]
+    return len(words) < 4
+
+
+def _speaking_score_breakdown(
+        *,
+        relevance: int,
+        language_quality: int,
+        detail: int,
+) -> tuple[int, dict[str, Any]]:
+    final_score = _clamp_score(relevance * 0.45 + language_quality * 0.2 + detail * 0.35)
+    return final_score, {
+        "relevance": relevance,
+        "language_quality": language_quality,
+        "detail": detail,
+        "final_score": final_score,
+    }
+
+
 def _quick_reactions_round_metrics(
         *,
         relevance: int,
@@ -521,6 +541,104 @@ async def forbidden_words_end(
     ))
     db.commit()
     return ForbiddenWordsEndResponse(score=final_score, status="success")
+
+
+@app.post("/speaking/evaluate", response_model=SpeakingEvaluateResponse)
+async def evaluate_speaking(
+        payload: SpeakingEvaluateRequest,
+        current_user: CurrentUserDep,
+        db: DbDep,
+) -> SpeakingEvaluateResponse:
+    used_text = payload.user_text.strip()
+    if not used_text:
+        raise HTTPException(status_code=400, detail="user_text is required")
+
+    word_count = len([word for word in used_text.split() if word.strip()])
+
+    if _is_low_effort_speaking_response(used_text):
+        feedback = "Powiedz trochę więcej, najlepiej pełnym zdaniem i z jednym konkretem."
+        metrics = {
+            "score": 0,
+            "low_effort": True,
+            "word_count": word_count,
+            "score_breakdown": {
+                "relevance": 0,
+                "language_quality": 0,
+                "detail": 0,
+                "final_score": 0,
+            },
+        }
+        db.add(LessonHistoryRecord(
+            user_id=current_user.id,
+            game_type="speaking",
+            topic=payload.topic,
+            level=payload.level,
+            started_at=None,
+            ended_at=datetime.utcnow(),
+            user_answers=json.dumps({
+                "prompt": payload.prompt,
+                "user_text": used_text,
+            }),
+            llm_feedback=json.dumps({
+                "feedback": feedback,
+                "low_effort": True,
+            }),
+            metrics=json.dumps(metrics),
+        ))
+        db.commit()
+        return SpeakingEvaluateResponse(
+            status="low_effort",
+            feedback=feedback,
+            score=0,
+            metrics=metrics,
+        )
+
+    evaluation = llm_service.speaking_evaluate(
+        topic=payload.topic,
+        level=payload.level,
+        prompt=payload.prompt,
+        user_text=used_text,
+    )
+    relevance = int(evaluation.get("relevance", 0))
+    language_quality = int(evaluation.get("language_quality", 0))
+    detail = int(evaluation.get("detail", 0))
+    feedback = str(evaluation.get("feedback", ""))
+    final_score, score_breakdown = _speaking_score_breakdown(
+        relevance=relevance,
+        language_quality=language_quality,
+        detail=detail,
+    )
+    metrics = {
+        "score": final_score,
+        "word_count": word_count,
+        "score_breakdown": score_breakdown,
+    }
+
+    db.add(LessonHistoryRecord(
+        user_id=current_user.id,
+        game_type="speaking",
+        topic=payload.topic,
+        level=payload.level,
+        started_at=None,
+        ended_at=datetime.utcnow(),
+        user_answers=json.dumps({
+            "prompt": payload.prompt,
+            "user_text": used_text,
+        }),
+        llm_feedback=json.dumps({
+            "feedback": feedback,
+            "prompt": payload.prompt,
+        }),
+        metrics=json.dumps(metrics),
+    ))
+    db.commit()
+
+    return SpeakingEvaluateResponse(
+        status="success",
+        feedback=feedback,
+        score=final_score,
+        metrics=metrics,
+    )
 
 
 @app.post("/cards/start", response_model=CardsStartResponse, response_model_exclude_none=True)

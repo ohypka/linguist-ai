@@ -50,6 +50,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return "Forbidden Words";
       case "quick_reactions":
         return "Quick Reactions";
+      case "speaking":
+        return "Speaking Mode";
       default:
         return gameType;
     }
@@ -63,6 +65,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return Icons.block;
       case "quick_reactions":
         return Icons.bolt;
+      case "speaking":
+        return Icons.mic;
       default:
         return Icons.history;
     }
@@ -171,6 +175,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
         if (successCount != null && roundsPlayed != null) {
           return "Successful rounds: $successCount/$roundsPlayed";
         }
+
+        final relevance = scoreBreakdown["relevance"];
+        if (relevance != null) {
+          return "Relevance: $relevance";
+        }
       }
 
       final lowEffort = metrics["low_effort"];
@@ -186,15 +195,111 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return "Answers: ${answers.length}";
     }
 
-    if (answers is Map<String, dynamic>) {
-      final userText = answers["user_text"] ?? answers["fallback_text"];
+    return "";
+  }
 
-      if (userText != null && userText.toString().trim().isNotEmpty) {
-        return "Answer: ${userText.toString()}";
+  List<MapEntry<String, String>> _extractRoundContext(
+    Map<String, dynamic> entry,
+  ) {
+    final gameType = entry["game_type"]?.toString();
+    final answers = entry["user_answers"];
+    final feedback = entry["llm_feedback"];
+    final metrics = entry["metrics"];
+
+    if (gameType == "speaking" && answers is Map<String, dynamic>) {
+      final prompt = answers["prompt"]?.toString().trim() ?? "";
+      final userText = answers["user_text"]?.toString().trim() ?? "";
+
+      final items = <MapEntry<String, String>>[];
+      if (prompt.isNotEmpty) {
+        items.add(MapEntry("Prompt", prompt));
       }
+      if (userText.isNotEmpty) {
+        items.add(MapEntry("Your answer", userText));
+      }
+      return items;
     }
 
-    return "Details unavailable";
+    if (gameType == "forbidden_words") {
+      final items = <MapEntry<String, String>>[];
+
+      String targetWord = "";
+      List<String> forbiddenWords = const [];
+
+      if (feedback is Map<String, dynamic>) {
+        targetWord = feedback["target_word"]?.toString().trim() ?? "";
+        final rawForbiddenWords = feedback["forbidden_words"];
+        if (rawForbiddenWords is List) {
+          forbiddenWords = rawForbiddenWords
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        }
+      }
+
+      if (targetWord.isEmpty && metrics is Map<String, dynamic>) {
+        targetWord = metrics["target_word"]?.toString().trim() ?? "";
+      }
+
+      String userText = "";
+      if (answers is Map<String, dynamic>) {
+        userText = answers["user_text"]?.toString().trim() ?? "";
+        if (userText.isEmpty) {
+          userText = answers["fallback_text"]?.toString().trim() ?? "";
+        }
+      }
+
+      if (targetWord.isNotEmpty) {
+        items.add(MapEntry("Target word", targetWord));
+      }
+      if (forbiddenWords.isNotEmpty) {
+        items.add(MapEntry("Forbidden words", forbiddenWords.join(", ")));
+      }
+      if (userText.isNotEmpty) {
+        items.add(MapEntry("Answer", userText));
+      }
+
+      return items;
+    }
+
+    return const [];
+  }
+
+  Widget _buildRoundContextSection(List<MapEntry<String, String>> items) {
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+                children: [
+                  TextSpan(
+                    text: "${item.key}: ",
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(text: item.value),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildFilterChip({
@@ -229,6 +334,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final feedback = _extractFeedback(entry);
     final score = _extractScore(entry);
     final details = _extractDetails(entry);
+    final roundContext = _extractRoundContext(entry);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -308,14 +414,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            details,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-              height: 1.3,
+          if (details != "") ...[
+            Text(
+              details,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.3,
+              ),
             ),
-          ),
+          ],
+          if (roundContext.isNotEmpty) ...[
+            if (details != "") const SizedBox(height: 12),
+            _buildRoundContextSection(roundContext),
+          ],
           const SizedBox(height: 10),
           const Text(
             "Feedback:",
@@ -474,6 +586,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   _buildFilterChip(
                     label: "Quick",
                     value: "quick_reactions",
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: "Speaking",
+                    value: "speaking",
                   ),
                 ],
               ),

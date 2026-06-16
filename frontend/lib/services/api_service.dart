@@ -31,10 +31,10 @@ class ApiService {
       return "http://127.0.0.1:8000";
     }
 
-    return "http://10.0.2.2:8000";
+    // return "http://10.0.2.2:8000";
 
     // na fizycznym telefonie:
-    // return "http://192.168.1.20:8000";
+    return "http://192.168.0.104:8000";
   }
 
   static const Duration _timeout = Duration(seconds: 45);
@@ -345,6 +345,23 @@ class ApiService {
       "/forbidden-words/end",
       body: {
         "total_score": totalScore,
+      },
+    );
+  }
+
+  static Future<Map<String, dynamic>> evaluateSpeaking({
+    required String topic,
+    required String level,
+    required String prompt,
+    required String userText,
+  }) {
+    return _postMap(
+      "/speaking/evaluate",
+      body: {
+        "topic": topic,
+        "level": level,
+        "prompt": prompt,
+        "user_text": userText,
       },
     );
   }

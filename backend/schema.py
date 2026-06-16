@@ -56,6 +56,18 @@ class ForbiddenWordsMetrics(BaseModel):
     score: int
 
 
+class SpeakingEvaluateRequest(LessonContext):
+    prompt: str
+    user_text: str
+
+
+class SpeakingEvaluateResponse(BaseModel):
+    status: str
+    feedback: str
+    score: int
+    metrics: dict[str, Any]
+
+
 class CardRequest(LessonContext):
     topic: str = "General English"
     card_count: int = 10
