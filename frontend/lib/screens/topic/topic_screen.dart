@@ -11,13 +11,10 @@ class TopicScreen extends StatefulWidget {
 }
 
 class _TopicScreenState extends State<TopicScreen> {
-  final _nameController = TextEditingController();
   final _topicController = TextEditingController();
 
   String _level = 'B1';
   bool _loading = false;
-
-  String? _nameError;
 
   static const _levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
@@ -26,66 +23,22 @@ class _TopicScreenState extends State<TopicScreen> {
 
     FocusScope.of(context).unfocus();
 
-    final name = _nameController.text.trim();
     final topic = _topicController.text.trim();
-
-    if (name.isEmpty) {
-      setState(() {
-        _nameError = 'Please enter your name.';
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your name to continue.'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      return;
-    }
-
     final topicToUse = topic.isEmpty ? 'general' : topic;
 
-    setState(() {
-      _loading = true;
-      _nameError = null;
-    });
-
-    try {
-      await ApiService.init(name);
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => HomeScreen(
-            topic: topicToUse,
-            level: _level,
-          ),
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HomeScreen(
+          topic: topicToUse,
+          level: _level,
         ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() => _loading = false);
-
-      final message = e.toString().replaceFirst('Exception: ', '');
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
     _topicController.dispose();
     super.dispose();
   }
@@ -117,29 +70,15 @@ class _TopicScreenState extends State<TopicScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    "Choose your topic and level",
-                    style: TextStyle(
+                  Text(
+                    "Hello, ${ApiService.playerName}! Choose your topic and level.",
+                    style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white54,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
-
-                  _buildTextField(
-                    controller: _nameController,
-                    hint: "Your name",
-                    errorText: _nameError,
-                    textInputAction: TextInputAction.next,
-                    onChanged: (value) {
-                      if (_nameError != null && value.trim().isNotEmpty) {
-                        setState(() => _nameError = null);
-                      }
-                    },
-                    onSubmitted: (_) => FocusScope.of(context).nextFocus(),
-                  ),
-
-                  const SizedBox(height: 12),
 
                   _buildTextField(
                     controller: _topicController,

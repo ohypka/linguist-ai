@@ -38,10 +38,13 @@ class ApiService {
   }
 
   static const Duration _timeout = Duration(seconds: 45);
+  static const String _nameKey = 'player_name';
 
   static String? _playerId;
   static String _playerName = "Guest";
   static bool _registered = false;
+
+  static String get playerName => _playerName;
 
   static Future<void> init(String name) async {
     final trimmedName = name.trim();
@@ -50,7 +53,28 @@ class ApiService {
     _playerId = await _loadOrCreatePlayerId();
     _registered = false;
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_nameKey, _playerName);
+
     await ensureRegistered();
+  }
+
+  static Future<bool> tryAutoInit() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString(_nameKey);
+    if (savedName == null || savedName.isEmpty) return false;
+
+    _playerName = savedName;
+    _playerId = await _loadOrCreatePlayerId();
+    _registered = false;
+
+    try {
+      await ensureRegistered();
+    } catch (_) {
+
+    }
+
+    return true;
   }
 
   static Future<String> _loadOrCreatePlayerId() async {
