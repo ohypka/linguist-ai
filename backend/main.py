@@ -157,6 +157,69 @@ def _forbidden_words_score_breakdown(
     }
 
 
+def _is_valid_forbidden_words_entry(candidate: dict[str, object]) -> bool:
+    target_word = str(candidate.get("target_word", "")).strip()
+    forbidden_words = candidate.get("forbidden_words")
+
+    if not target_word or not isinstance(forbidden_words, list) or len(forbidden_words) != 3:
+        return False
+
+    normalized_target = target_word.lower()
+    normalized_forbidden_words: list[str] = []
+    for word in forbidden_words:
+        normalized_word = str(word).strip().lower()
+        if not normalized_word or normalized_word == normalized_target:
+            return False
+        normalized_forbidden_words.append(normalized_word)
+
+    return len(set(normalized_forbidden_words)) == 3
+
+
+def _forbidden_words_end_score(db, user_id: str, limit: int = 3) -> int:
+    stmt = (
+        select(LessonHistoryRecord)
+        .where(LessonHistoryRecord.user_id == user_id)
+        .where(LessonHistoryRecord.game_type == "forbidden_words")
+        .order_by(LessonHistoryRecord.ended_at.desc())
+        .limit(limit)
+    )
+
+    total_score = 0
+    for row in db.scalars(stmt):
+        try:
+            metrics = cast(dict[str, Any], json.loads(row.metrics))
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        score_breakdown = metrics.get("score_breakdown")
+        if isinstance(score_breakdown, dict):
+            total_score += int(score_breakdown.get("final_score", 0) or 0)
+        else:
+            total_score += int(metrics.get("score", 0) or 0)
+
+    return total_score
+
+
+def _is_low_effort_speaking_response(text: str) -> bool:
+    words = [word for word in text.strip().split() if word]
+    return len(words) < 4
+
+
+def _speaking_score_breakdown(
+        *,
+        relevance: int,
+        language_quality: int,
+        detail: int,
+) -> tuple[int, dict[str, Any]]:
+    final_score = _clamp_score(relevance * 0.45 + language_quality * 0.2 + detail * 0.35)
+    return final_score, {
+        "relevance": relevance,
+        "language_quality": language_quality,
+        "detail": detail,
+        "final_score": final_score,
+    }
+
+
 def _quick_reactions_round_metrics(
         *,
         relevance: int,
@@ -240,7 +303,35 @@ async def forbidden_words_start(
     sessions.cleanup_stale_sessions(db)
 
     topic = payload.topic.lower().strip() or "general"
-    entry = llm_service.forbidden_words(topic, payload.level)
+    previous_target_words = sessions.previous_forbidden_words_target_words(
+        db,
+        current_user.id,
+        topic,
+        payload.level,
+    )
+    previous_target_words_set = {word.lower() for word in previous_target_words}
+
+    entry: dict[str, object] | None = None
+    for attempt in range(3):
+        candidate = llm_service.forbidden_words(
+            topic,
+            payload.level,
+            previous_target_words=previous_target_words,
+        )
+        if not _is_valid_forbidden_words_entry(candidate):
+            continue
+
+        candidate_target_word = str(candidate.get("target_word", "")).strip().lower()
+        if not previous_target_words_set or candidate_target_word not in previous_target_words_set:
+            entry = candidate
+            break
+
+        if attempt == 2:
+            entry = candidate
+
+    if entry is None:
+        raise HTTPException(status_code=503, detail="Failed to generate a valid forbidden words round")
+
     game_id = str(uuid4())
     target_word = str(entry["target_word"])
     forbidden_words = [str(word) for word in entry["forbidden_words"]]
@@ -288,6 +379,42 @@ async def forbidden_words_evaluate(
     if not used_text:
         raise HTTPException(status_code=400, detail="user_text or fallback_text is required")
 
+    if len(used_text) <= 3:
+        db.add(LessonHistoryRecord(
+            user_id=current_user.id,
+            game_type="forbidden_words",
+            topic=session.topic,
+            level=session.level,
+            started_at=None,
+            ended_at=datetime.utcnow(),
+            user_answers=json.dumps({"user_text": payload.user_text, "fallback_text": payload.fallback_text}),
+            llm_feedback=json.dumps({
+                "game_id": payload.game_id,
+                "target_word": game["target_word"],
+                "forbidden_words": game["forbidden_words"],
+                "low_effort": True,
+                "feedback": "Nie podano opisu.",
+            }),
+            metrics=json.dumps({
+                "game_id": payload.game_id,
+                "target_word": game["target_word"],
+                "forbidden_words": game["forbidden_words"],
+                "score": 0,
+                "low_effort": True,
+            }),
+        ))
+        sessions.delete_forbidden_words_session(db, payload.game_id)
+        db.commit()
+        return ForbiddenWordsEvaluateResponse(
+            round_success=False,
+            confidence=0,
+            feedback="Nie podano opisu.",
+            status="low_effort",
+            score=0,
+            metrics={"low_effort": True, "confidence": 0, "match_confidence": 0,
+                     "allowed": True, "guessed_is_forbidden": False, "round_success": False, "score": 0},
+        )
+
     target_word = game["target_word"]
 
     lowered_text = used_text.lower()
@@ -322,13 +449,6 @@ async def forbidden_words_evaluate(
         guessed_is_forbidden=guessed_is_forbidden,
         round_success=round_success,
     )
-
-    db.add(LeaderboardRecord(
-        user_id=current_user.id,
-        nickname=current_user.name,
-        score=final_score,
-        game_type="forbidden_words"
-    ))
 
     if allowed:
         if guessed_is_forbidden:
@@ -383,10 +503,12 @@ async def forbidden_words_evaluate(
             "allowed": allowed,
             "matched_forbidden_words": matched_forbidden_words,
             "matched_target_word": matched_target_word,
+            "target_word": target_word,
             "score_breakdown": score_breakdown,
         }),
         metrics=json.dumps({
             "game_id": payload.game_id,
+            "target_word": target_word,
             "score_breakdown": score_breakdown,
         }),
     ))
@@ -404,11 +526,126 @@ async def forbidden_words_evaluate(
     )
 
 
+@app.post("/forbidden-words/end", response_model=ForbiddenWordsEndResponse)
+async def forbidden_words_end(
+        payload: ForbiddenWordsEndRequest,
+        current_user: CurrentUserDep,
+        db: DbDep,
+) -> ForbiddenWordsEndResponse:
+    final_score = _forbidden_words_end_score(db, current_user.id)
+    db.add(LeaderboardRecord(
+        user_id=current_user.id,
+        nickname=current_user.name,
+        score=final_score,
+        game_type="forbidden_words",
+    ))
+    db.commit()
+    return ForbiddenWordsEndResponse(score=final_score, status="success")
+
+
+@app.post("/speaking/evaluate", response_model=SpeakingEvaluateResponse)
+async def evaluate_speaking(
+        payload: SpeakingEvaluateRequest,
+        current_user: CurrentUserDep,
+        db: DbDep,
+) -> SpeakingEvaluateResponse:
+    used_text = payload.user_text.strip()
+    if not used_text:
+        raise HTTPException(status_code=400, detail="user_text is required")
+
+    word_count = len([word for word in used_text.split() if word.strip()])
+
+    if _is_low_effort_speaking_response(used_text):
+        feedback = "Powiedz trochę więcej, najlepiej pełnym zdaniem i z jednym konkretem."
+        metrics = {
+            "score": 0,
+            "low_effort": True,
+            "word_count": word_count,
+            "score_breakdown": {
+                "relevance": 0,
+                "language_quality": 0,
+                "detail": 0,
+                "final_score": 0,
+            },
+        }
+        db.add(LessonHistoryRecord(
+            user_id=current_user.id,
+            game_type="speaking",
+            topic=payload.topic,
+            level=payload.level,
+            started_at=None,
+            ended_at=datetime.utcnow(),
+            user_answers=json.dumps({
+                "prompt": payload.prompt,
+                "user_text": used_text,
+            }),
+            llm_feedback=json.dumps({
+                "feedback": feedback,
+                "low_effort": True,
+            }),
+            metrics=json.dumps(metrics),
+        ))
+        db.commit()
+        return SpeakingEvaluateResponse(
+            status="low_effort",
+            feedback=feedback,
+            score=0,
+            metrics=metrics,
+        )
+
+    evaluation = llm_service.speaking_evaluate(
+        topic=payload.topic,
+        level=payload.level,
+        prompt=payload.prompt,
+        user_text=used_text,
+    )
+    relevance = int(evaluation.get("relevance", 0))
+    language_quality = int(evaluation.get("language_quality", 0))
+    detail = int(evaluation.get("detail", 0))
+    feedback = str(evaluation.get("feedback", ""))
+    final_score, score_breakdown = _speaking_score_breakdown(
+        relevance=relevance,
+        language_quality=language_quality,
+        detail=detail,
+    )
+    metrics = {
+        "score": final_score,
+        "word_count": word_count,
+        "score_breakdown": score_breakdown,
+    }
+
+    db.add(LessonHistoryRecord(
+        user_id=current_user.id,
+        game_type="speaking",
+        topic=payload.topic,
+        level=payload.level,
+        started_at=None,
+        ended_at=datetime.utcnow(),
+        user_answers=json.dumps({
+            "prompt": payload.prompt,
+            "user_text": used_text,
+        }),
+        llm_feedback=json.dumps({
+            "feedback": feedback,
+            "prompt": payload.prompt,
+        }),
+        metrics=json.dumps(metrics),
+    ))
+    db.commit()
+
+    return SpeakingEvaluateResponse(
+        status="success",
+        feedback=feedback,
+        score=final_score,
+        metrics=metrics,
+    )
+
+
 @app.post("/cards/start", response_model=CardsStartResponse, response_model_exclude_none=True)
 async def generate_deck(request: CardRequest, current_user: CurrentUserDep, db: DbDep):
     sessions.cleanup_stale_sessions(db)
 
-    sentences = llm_service.generate_deck(count=request.card_count, topic=request.topic)
+    sentences = llm_service.generate_deck(count=request.card_count, topic=request.topic, level=request.level)
 
     deck = []
     for i in range(len(sentences)):
@@ -535,7 +772,7 @@ async def quick_reactions_start(
 
     game_id = str(uuid4())
     topic = payload.topic.lower().strip() or "general"
-    prompt = llm_service.quick_reactions(topic, [])
+    prompt = llm_service.quick_reactions(topic, [], level=payload.level)
 
     game = QuickReactionsState(
         topic=topic,
@@ -598,7 +835,7 @@ async def quick_reactions_evaluate(
             low_effort=round_metrics.low_effort,
         ))
         game.llm_feedback.append(feedback)
-        game.current_prompt = llm_service.quick_reactions(game.topic, sessions.recent_quick_reactions_prompts(game))
+        game.current_prompt = llm_service.quick_reactions(game.topic, sessions.recent_quick_reactions_prompts(game), level=game.level)
         sessions.update_quick_reactions_state(session, game)
         db.commit()
 
@@ -644,7 +881,7 @@ async def quick_reactions_evaluate(
     ))
     game.llm_feedback.append(feedback)
 
-    game.current_prompt = llm_service.quick_reactions(game.topic, sessions.recent_quick_reactions_prompts(game))
+    game.current_prompt = llm_service.quick_reactions(game.topic, sessions.recent_quick_reactions_prompts(game), level=game.level)
 
     sessions.update_quick_reactions_state(session, game)
     db.commit()
@@ -684,7 +921,7 @@ async def quick_reactions_end(
 
     final_score, session_metrics = _quick_reactions_session_summary(game)
 
-    if final_score > 0 and not history_exists:
+    if not history_exists:
         db.add(LeaderboardRecord(
             user_id=current_user.id,
             nickname=current_user.name,

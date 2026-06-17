@@ -38,6 +38,15 @@ class ForbiddenWordsEvaluateResponse(BaseModel):
     metrics: dict[str, Any]
 
 
+class ForbiddenWordsEndRequest(BaseModel):
+    total_score: int
+
+
+class ForbiddenWordsEndResponse(BaseModel):
+    score: int
+    status: str
+
+
 class ForbiddenWordsMetrics(BaseModel):
     confidence: int
     match_confidence: int
@@ -45,6 +54,18 @@ class ForbiddenWordsMetrics(BaseModel):
     guessed_is_forbidden: bool
     round_success: bool
     score: int
+
+
+class SpeakingEvaluateRequest(LessonContext):
+    prompt: str
+    user_text: str
+
+
+class SpeakingEvaluateResponse(BaseModel):
+    status: str
+    feedback: str
+    score: int
+    metrics: dict[str, Any]
 
 
 class CardRequest(LessonContext):

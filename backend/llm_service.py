@@ -11,7 +11,8 @@ client = OpenAI(
 )
 model = "gpt-4o-mini"
 
-def forbidden_words(topic: str, level: str):
+def forbidden_words(topic: str, level: str, previous_target_words: list[str] | None = None):
+    previous_target_words_text = ", ".join(previous_target_words or []) or "(none)"
     system_prompt = (
         "You are an English teacher assistant working as a backend for a language learning app. "
         "Your task is to generate a vocabulary challenge similar to the game \"Taboo\"."
@@ -28,6 +29,12 @@ def forbidden_words(topic: str, level: str):
         "Strict Rules:"
         "- All words must be in English."
         "- Do not use the target word itself as a forbidden word."
+        "- Avoid repeating any target word from the provided previous target words list."
+        "- If the topic is narrow, still choose a fresh and natural alternative instead of repeating a recent word."
+        "- The forbidden words must keep the round playable: avoid trap combinations where the target becomes nearly impossible to describe."
+        "- Do not use forbidden words that are overly generic, definitional core words, or near-overlaps that remove all obvious ways to explain the target."
+        "- Prefer related clues that make the task challenging but still solvable by paraphrasing."
+        "- If a target would force impossible forbidden words, choose a simpler or more describable target instead."
         "- Return ONLY a raw JSON object. Do not include markdown code blocks or any conversational text."
         ""
         "Format your response exactly like this:"
@@ -38,14 +45,19 @@ def forbidden_words(topic: str, level: str):
     )
     response = client.chat.completions.create(
         model=model,
+        temperature=1.1,
         messages=[
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": "Generate a target word and forbidden words for the topic: "
-                + topic
-                + ". CEFR level: "
-                + level,
+                "content": (
+                    "Generate a target word and forbidden words for the topic: "
+                    + topic
+                    + ". CEFR level: "
+                    + level
+                    + "\nPrevious target words to avoid: "
+                    + previous_target_words_text
+                ),
             }
         ]
     )
@@ -115,7 +127,7 @@ def forbidden_words_match(target_word: str, description: str) -> dict[str, objec
     )
     return json.loads(response.choices[0].message.content)
 
-def generate_deck(count : int, topic : str):
+def generate_deck(count: int, topic: str, level: str = 'B1'):
     system_prompt=(
         "Jesteś doświadczonym lektorem języka angielskiego, który pomaga polskim uczniom w nauce, wyłapując i tłumacząc typowe błędy gramatyczne, leksykalne oraz kalki językowe."
         "Twoim zadaniem jest wygenerowanie listy zdań w języku angielskim o zróżnicowanym poziomie trudności. "
@@ -127,7 +139,7 @@ def generate_deck(count : int, topic : str):
         "Nie dodawaj absolutnie żadnego tekstu, powitań ani komentarzy poza samym kodem JSON. "
         "Każdy obiekt musi mieć dokładnie taką strukturę:"
         "{"
-        "\"text\": \"[Tutaj zdanie po angielsku]\"," 
+        "\"text\": \"[Tutaj zdanie po angielsku]\","
         "\"is_correct\": [true lub false],"
         "\"explanation\": \"[Zwięzłe, edukacyjne wyjaśnienie po polsku dla zdań błędnych]\""
         "}"
@@ -143,7 +155,7 @@ def generate_deck(count : int, topic : str):
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Wygeneruj '{count}' nowych, unikalnych przykładów w ramach tematu '{topic}'."},
+            {"role": "user", "content": f"Wygeneruj '{count}' nowych, unikalnych przykładów w ramach tematu '{topic}'. Poziom CEFR: {level}."},
         ]
     )
 
@@ -176,7 +188,63 @@ def cards_feedback(accuracy, mistakes, successes):
     feedback = response.choices[0].message.content
     return feedback
 
-def quick_reactions(topic: str, recent_prompts: list[str] | None = None):
+
+def speaking_evaluate(topic: str, level: str, prompt: str, user_text: str) -> dict[str, object]:
+    system_prompt = (
+        "Jesteś wspierającym lektorem języka angielskiego w aplikacji do nauki. "
+        "Oceń krótką odpowiedź mówioną ucznia na prompt po angielsku. "
+        "Wejście pochodzi z speech-to-text, więc transcript może być częściowo zabrudzony lub mieć pojedyncze błędnie rozpoznane słowa. "
+        "Masz ocenić wypowiedź w kontekście tematu i poziomu CEFR. "
+        "Zwróć WYŁĄCZNIE JSON z polami relevance, language_quality, detail i feedback. "
+        ""
+        "Kryteria:"
+        "1. relevance: na ile odpowiedź rzeczywiście odpowiada na prompt."
+        "2. language_quality: na ile język brzmi naturalnie i poprawnie, biorąc pod uwagę możliwe przekłamania STT."
+        "3. detail: na ile odpowiedź jest rozwinięta i konkretna."
+        ""
+        "Zasady:"
+        "- Każdy score ma być liczbą 0-100."
+        "- Feedback ma być krótki, naturalny, po polsku i bez wspominania modelu lub procesu oceny."
+        "- Zwracaj się bezpośrednio do użytkownika."
+        "- Oceniaj przede wszystkim sens wypowiedzi, intencję i ilość przekazanej treści."
+        "- Nie obniżaj mocno oceny za pojedyncze dziwne słowa, jeśli reszta wypowiedzi jasno pokazuje, co użytkownik chciał powiedzieć."
+        "- Jeśli transcript wygląda na częściowo zniekształcony przez STT, bądź ostrożny w krytykowaniu konkretnych słów lub form."
+        "- Jeśli odpowiedź jest bardzo krótka, detail powinien być niski."
+        "- Jeśli użytkownik podał kilka konkretnych informacji, listę elementów albo przykład, detail powinien być raczej wysoki."
+        "- Nie wolno narzekać na brak szczegółów, słabe rozwinięcie albo małe zróżnicowanie, jeśli transcript zawiera już kilka konkretów."
+        "- Najpierw nazwij jedną realną mocną stronę odpowiedzi. Dopiero potem możesz dodać jedną małą, konkretną wskazówkę."
+        "- Jeśli odpowiedź jest sensowna i rozwinięta, feedback może być po prostu pozytywny. Nie wymuszaj krytyki na siłę."
+        "- Nie twórz uwag, których nie da się obronić na podstawie transcriptu."
+        "- Output ONLY JSON, bez dodatkowego tekstu."
+        ""
+        "Format:"
+        "{"
+        '\"relevance\": 70,'
+        '\"language_quality\": 65,'
+        '\"detail\": 55,'
+        '\"feedback\": \"Krótki feedback po polsku.\"'
+        "}"
+    )
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    "Topic: " + topic
+                    + "\nCEFR level: " + level
+                    + "\nPrompt: " + prompt
+                    + "\nStudent response: " + user_text
+                ),
+            },
+        ],
+    )
+
+    return json.loads(response.choices[0].message.content)
+
+def quick_reactions(topic: str, recent_prompts: list[str] | None = None, level: str = 'B1'):
     recent_prompt_text = "\n".join(f"- {prompt}" for prompt in (recent_prompts or []))
     system_prompt = (
         "You are an unpredictable, witty, and slightly chaotic NPC in a fast-paced English language learning minigame. "
@@ -208,7 +276,7 @@ def quick_reactions(topic: str, recent_prompts: list[str] | None = None):
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": "Topic: " + topic + "\nRecent prompts:\n" + (recent_prompt_text or "(none)") + "\nGenerate the sentence now.",
+                "content": "Topic: " + topic + "\nCEFR level: " + level + "\nRecent prompts:\n" + (recent_prompt_text or "(none)") + "\nGenerate the sentence now.",
             }
         ]
     )
